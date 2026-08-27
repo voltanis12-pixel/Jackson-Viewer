@@ -214,22 +214,18 @@ vec3 toneMap(vec3 color)
     //-----------------------------------------------------------
     // AAA Renderer - Cinematic Contrast
     //
-    // Push values slightly away from middle gray.
-    //
     // 1.00 = original
-    // 1.06 = subtle increase
+    // 1.10 = stronger cinematic contrast
     //-----------------------------------------------------------
 
     color =
         (color - vec3(0.5)) *
-        1.06 +
+        1.10 +
         vec3(0.5);
 
 
     //-----------------------------------------------------------
     // AAA Renderer - Perceptual Luminance
-    //
-    // Rec.709 luminance coefficients.
     //-----------------------------------------------------------
 
     float aaa_luma =
@@ -247,14 +243,14 @@ vec3 toneMap(vec3 color)
     // AAA Renderer - Saturation
     //
     // 1.00 = original
-    // 1.04 = subtle increase
+    // 1.08 = richer color
     //-----------------------------------------------------------
 
     color =
         mix(
             vec3(aaa_luma),
             color,
-            1.04
+            1.08
         );
 
 
