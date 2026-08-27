@@ -30,7 +30,7 @@ uniform vec2 screen_res;
 in vec2 vary_fragcoord;
 
 //===============================================================
-// tone mapping taken from Khronos sample implementation
+// Tone mapping taken from Khronos sample implementation
 //===============================================================
 
 // sRGB => XYZ => D65_2_D60 => AP1 => RRT_SAT
@@ -50,8 +50,8 @@ const mat3 ACESOutputMat = mat3
     -0.07367, -0.00605,  1.07602
 );
 
+
 // ACES tone map (faster approximation)
-// see: https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/
 vec3 toneMapACES_Narkowicz(vec3 color)
 {
     const float A = 2.51;
@@ -70,78 +70,128 @@ vec3 toneMapACES_Narkowicz(vec3 color)
 
 
 // ACES filmic tone map approximation
-// see https://github.com/TheRealMJP/BakingLab/blob/master/BakingLab/ACES.hlsl
 vec3 RRTAndODTFit(vec3 color)
 {
-    vec3 a = color * (color + 0.0245786) - 0.000090537;
-    vec3 b = color * (0.983729 * color + 0.4329510) + 0.238081;
+    vec3 a =
+        color *
+        (color + 0.0245786) -
+        0.000090537;
+
+    vec3 b =
+        color *
+        (0.983729 * color + 0.4329510) +
+        0.238081;
 
     return a / b;
 }
 
 
-// tone mapping
+// ACES Hill tone mapping
 vec3 toneMapACES_Hill(vec3 color)
 {
     color = ACESInputMat * color;
 
-    // Apply RRT and ODT
     color = RRTAndODTFit(color);
 
     color = ACESOutputMat * color;
 
-    // Clamp to [0, 1]
-    color = clamp(color, 0.0, 1.0);
+    color = clamp(
+        color,
+        0.0,
+        1.0
+    );
 
     return color;
 }
 
 
-// Khronos Neutral tonemapping
-// https://github.com/KhronosGroup/ToneMapping/tree/main
-//
-// Input color is non-negative and resides in the Linear Rec. 709
-// color space.
-//
-// Output color is also Linear Rec. 709, but in the [0, 1] range.
+//===============================================================
+// Khronos Neutral Tone Mapping
+//===============================================================
+
 vec3 PBRNeutralToneMapping(vec3 color)
 {
-    const float startCompression = 0.8 - 0.04;
-    const float desaturation = 0.15;
+    const float startCompression =
+        0.8 - 0.04;
 
-    float x = min(color.r, min(color.g, color.b));
+    const float desaturation =
+        0.15;
+
+
+    float x =
+        min(
+            color.r,
+            min(
+                color.g,
+                color.b
+            )
+        );
+
 
     float offset =
         x < 0.08
         ? x - 6.25 * x * x
         : 0.04;
 
+
     color -= offset;
 
-    float peak = max(color.r, max(color.g, color.b));
+
+    float peak =
+        max(
+            color.r,
+            max(
+                color.g,
+                color.b
+            )
+        );
+
 
     if (peak < startCompression)
     {
         return color;
     }
 
-    const float d = 1.0 - startCompression;
+
+    const float d =
+        1.0 - startCompression;
+
 
     float newPeak =
         1.0 -
         d * d /
-        (peak + d - startCompression);
+        (
+            peak +
+            d -
+            startCompression
+        );
 
-    color *= newPeak / peak;
+
+    color *=
+        newPeak / peak;
+
 
     float g =
         1.0 -
         1.0 /
-        (desaturation * (peak - newPeak) + 1.0);
+        (
+            desaturation *
+            (
+                peak -
+                newPeak
+            ) +
+            1.0
+        );
+
 
     return mix(
         color,
-        newPeak * vec3(1.0, 1.0, 1.0),
+        newPeak *
+        vec3(
+            1.0,
+            1.0,
+            1.0
+        ),
         g
     );
 }
@@ -153,56 +203,151 @@ uniform int tonemap_type;
 
 
 //===============================================================
-// Main tone mapping
+// AAA Renderer - Highlight Rolloff
+//===============================================================
+
+vec3 aaaHighlightRolloff(vec3 color)
+{
+    //-----------------------------------------------------------
+    // Find brightest RGB channel.
+    //-----------------------------------------------------------
+
+    float peak =
+        max(
+            color.r,
+            max(
+                color.g,
+                color.b
+            )
+        );
+
+
+    //-----------------------------------------------------------
+    // Begin gently compressing highlights around 75%.
+    //-----------------------------------------------------------
+
+    const float shoulderStart =
+        0.75;
+
+
+    if (peak > shoulderStart)
+    {
+        float highlightAmount =
+            peak -
+            shoulderStart;
+
+
+        //-------------------------------------------------------
+        // Soft shoulder curve.
+        //
+        // Higher values = stronger highlight compression.
+        //-------------------------------------------------------
+
+        float compressedHighlight =
+            highlightAmount /
+            (
+                1.0 +
+                1.35 *
+                highlightAmount
+            );
+
+
+        float newPeak =
+            shoulderStart +
+            compressedHighlight;
+
+
+        //-------------------------------------------------------
+        // Preserve hue by scaling all RGB channels together.
+        //-------------------------------------------------------
+
+        if (peak > 0.0001)
+        {
+            color *=
+                newPeak /
+                peak;
+        }
+    }
+
+
+    return color;
+}
+
+
+//===============================================================
+// Main Tone Mapping
 //===============================================================
 
 vec3 toneMap(vec3 color)
 {
 #ifndef NO_POST
 
-    vec3 linear_input_color = color;
+    vec3 linear_input_color =
+        color;
+
 
     float exp_scale =
         texture(
             exposureMap,
-            vec2(0.5, 0.5)
+            vec2(
+                0.5,
+                0.5
+            )
         ).r;
 
+
     float final_exposure =
-        exposure * exp_scale;
+        exposure *
+        exp_scale;
+
 
     vec3 exposed_color =
-        color * final_exposure;
+        color *
+        final_exposure;
 
 
     //-----------------------------------------------------------
     // Standard Second Life tone mapping
     //-----------------------------------------------------------
 
-    vec3 tonemapped_color = exposed_color;
+    vec3 tonemapped_color =
+        exposed_color;
+
 
     switch (tonemap_type)
     {
         case 0:
+
             tonemapped_color =
-                PBRNeutralToneMapping(exposed_color);
+                PBRNeutralToneMapping(
+                    exposed_color
+                );
+
             break;
 
+
         case 1:
+
             tonemapped_color =
-                toneMapACES_Hill(exposed_color);
+                toneMapACES_Hill(
+                    exposed_color
+                );
+
             break;
     }
 
 
     vec3 exposed_linear_input =
-        linear_input_color * final_exposure;
+        linear_input_color *
+        final_exposure;
 
-    color = mix(
-        exposed_linear_input,
-        tonemapped_color,
-        tonemap_mix
-    );
+
+    color =
+        mix(
+            exposed_linear_input,
+            tonemapped_color,
+            tonemap_mix
+        );
 
 
     //===========================================================
@@ -212,20 +357,23 @@ vec3 toneMap(vec3 color)
 
 
     //-----------------------------------------------------------
-    // AAA Renderer - Cinematic Contrast
+    // Cinematic Contrast
     //
     // 1.00 = original
     // 1.10 = stronger cinematic contrast
     //-----------------------------------------------------------
 
     color =
-        (color - vec3(0.5)) *
+        (
+            color -
+            vec3(0.5)
+        ) *
         1.10 +
         vec3(0.5);
 
 
     //-----------------------------------------------------------
-    // AAA Renderer - Perceptual Luminance
+    // Perceptual luminance
     //-----------------------------------------------------------
 
     float aaa_luma =
@@ -240,17 +388,32 @@ vec3 toneMap(vec3 color)
 
 
     //-----------------------------------------------------------
-    // AAA Renderer - Saturation
+    // Saturation
     //
     // 1.00 = original
-    // 1.08 = richer color
+    // 1.08 = richer colors
     //-----------------------------------------------------------
 
     color =
         mix(
-            vec3(aaa_luma),
+            vec3(
+                aaa_luma
+            ),
             color,
             1.08
+        );
+
+
+    //-----------------------------------------------------------
+    // Cinematic Highlight Rolloff
+    //
+    // Prevent harsh clipping in the brightest portions
+    // of the rendered image.
+    //-----------------------------------------------------------
+
+    color =
+        aaaHighlightRolloff(
+            color
         );
 
 
@@ -258,11 +421,12 @@ vec3 toneMap(vec3 color)
     // Final legal display range
     //-----------------------------------------------------------
 
-    color = clamp(
-        color,
-        0.0,
-        1.0
-    );
+    color =
+        clamp(
+            color,
+            0.0,
+            1.0
+        );
 
 
 #else
@@ -271,14 +435,19 @@ vec3 toneMap(vec3 color)
         exposure *
         texture(
             exposureMap,
-            vec2(0.5, 0.5)
+            vec2(
+                0.5,
+                0.5
+            )
         ).r;
 
-    color = clamp(
-        color,
-        0.0,
-        1.0
-    );
+
+    color =
+        clamp(
+            color,
+            0.0,
+            1.0
+        );
 
 #endif
 
@@ -287,49 +456,68 @@ vec3 toneMap(vec3 color)
 
 
 //===============================================================
-// Tone mapping without exposure
+// Tone Mapping Without Exposure
 //===============================================================
 
 vec3 toneMapNoExposure(vec3 color)
 {
 #ifndef NO_POST
 
-    vec3 linear_input_color = color;
+    vec3 linear_input_color =
+        color;
 
-    vec3 tonemapped_color = color;
+
+    vec3 tonemapped_color =
+        color;
+
 
     switch (tonemap_type)
     {
         case 0:
+
             tonemapped_color =
-                PBRNeutralToneMapping(color);
+                PBRNeutralToneMapping(
+                    color
+                );
+
             break;
 
+
         case 1:
+
             tonemapped_color =
-                toneMapACES_Hill(color);
+                toneMapACES_Hill(
+                    color
+                );
+
             break;
     }
 
-    color = mix(
-        linear_input_color,
-        tonemapped_color,
-        tonemap_mix
-    );
 
-    color = clamp(
-        color,
-        0.0,
-        1.0
-    );
+    color =
+        mix(
+            linear_input_color,
+            tonemapped_color,
+            tonemap_mix
+        );
+
+
+    color =
+        clamp(
+            color,
+            0.0,
+            1.0
+        );
+
 
 #else
 
-    color = clamp(
-        color,
-        0.0,
-        1.0
-    );
+    color =
+        clamp(
+            color,
+            0.0,
+            1.0
+        );
 
 #endif
 
@@ -338,7 +526,7 @@ vec3 toneMapNoExposure(vec3 color)
 
 
 //===============================================================
-// Exposure debug visualization
+// Exposure Debug Visualization
 //===============================================================
 
 void debugExposure(inout vec3 color)
@@ -346,20 +534,34 @@ void debugExposure(inout vec3 color)
     float exp_scale =
         texture(
             exposureMap,
-            vec2(0.5, 0.5)
+            vec2(
+                0.5,
+                0.5
+            )
         ).r;
 
-    exp_scale *= 0.5;
 
-    if (
-        abs(vary_fragcoord.y - exp_scale) < 0.01 &&
-        vary_fragcoord.x < 0.1
+    exp_scale *=
+        0.5;
+
+
+    if
+    (
+        abs(
+            vary_fragcoord.y -
+            exp_scale
+        ) <
+        0.01
+        &&
+        vary_fragcoord.x <
+        0.1
     )
     {
-        color = vec3(
-            1.0,
-            0.0,
-            0.0
-        );
+        color =
+            vec3(
+                1.0,
+                0.0,
+                0.0
+            );
     }
 }
