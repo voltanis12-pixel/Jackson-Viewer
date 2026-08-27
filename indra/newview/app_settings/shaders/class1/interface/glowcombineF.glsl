@@ -32,7 +32,113 @@ uniform sampler2D emissiveRect;
 
 in vec2 tc;
 
+
+//===============================================================
+// AAA RENDERER
+// Cinematic Glow Composition
+//
+// This is the final stage where the normal rendered scene and the
+// processed glow buffer are combined.
+//
+// Stock Second Life performs:
+//
+//     diffuse + emissive
+//
+// We preserve that behavior while giving brighter glow sources a
+// very small intensity-dependent boost.
+//===============================================================
+
 void main()
 {
-    frag_color = texture(diffuseRect, tc) + texture(emissiveRect, tc);
+    //-----------------------------------------------------------
+    // Original rendered scene
+    //-----------------------------------------------------------
+
+    vec4 sceneColor =
+        texture(
+            diffuseRect,
+            tc
+        );
+
+
+    //-----------------------------------------------------------
+    // Blurred glow / emissive buffer
+    //-----------------------------------------------------------
+
+    vec4 glowColor =
+        texture(
+            emissiveRect,
+            tc
+        );
+
+
+    //-----------------------------------------------------------
+    // Measure perceptual brightness of the glow.
+    //
+    // Rec.709 luminance coefficients.
+    //-----------------------------------------------------------
+
+    float glowLuma =
+        dot(
+            glowColor.rgb,
+            vec3(
+                0.2126,
+                0.7152,
+                0.0722
+            )
+        );
+
+
+    //-----------------------------------------------------------
+    // AAA Renderer - Bright Glow Core Enhancement
+    //
+    // Very weak bloom remains essentially unchanged.
+    //
+    // Stronger glow gradually receives up to roughly an 8%
+    // increase.
+    //
+    // This helps lamps, fire, crystals, magic and emissive PBR
+    // surfaces retain a more convincing luminous center.
+    //-----------------------------------------------------------
+
+    float glowBoost =
+        mix(
+            1.0,
+            1.08,
+            smoothstep(
+                0.02,
+                0.30,
+                glowLuma
+            )
+        );
+
+
+    //-----------------------------------------------------------
+    // Preserve the existing additive glow composition.
+    //-----------------------------------------------------------
+
+    vec4 combinedColor =
+        sceneColor +
+        glowColor;
+
+
+    //-----------------------------------------------------------
+    // Replace RGB with our subtly enhanced glow result.
+    //
+    // Alpha remains exactly equivalent to the original additive
+    // combine behavior.
+    //-----------------------------------------------------------
+
+    combinedColor.rgb =
+        sceneColor.rgb +
+        glowColor.rgb *
+        glowBoost;
+
+
+    //-----------------------------------------------------------
+    // Final output
+    //-----------------------------------------------------------
+
+    frag_color =
+        combinedColor;
 }
