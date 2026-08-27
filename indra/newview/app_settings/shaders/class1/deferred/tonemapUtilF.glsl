@@ -29,6 +29,7 @@ uniform sampler2D exposureMap;
 uniform vec2 screen_res;
 in vec2 vary_fragcoord;
 
+
 //===============================================================
 // Tone mapping taken from Khronos sample implementation
 //===============================================================
@@ -51,7 +52,10 @@ const mat3 ACESOutputMat = mat3
 );
 
 
-// ACES tone map (faster approximation)
+//===============================================================
+// ACES Narkowicz
+//===============================================================
+
 vec3 toneMapACES_Narkowicz(vec3 color)
 {
     const float A = 2.51;
@@ -69,7 +73,10 @@ vec3 toneMapACES_Narkowicz(vec3 color)
 }
 
 
-// ACES filmic tone map approximation
+//===============================================================
+// ACES Hill
+//===============================================================
+
 vec3 RRTAndODTFit(vec3 color)
 {
     vec3 a =
@@ -86,7 +93,6 @@ vec3 RRTAndODTFit(vec3 color)
 }
 
 
-// ACES Hill tone mapping
 vec3 toneMapACES_Hill(vec3 color)
 {
     color = ACESInputMat * color;
@@ -208,10 +214,6 @@ uniform int tonemap_type;
 
 vec3 aaaHighlightRolloff(vec3 color)
 {
-    //-----------------------------------------------------------
-    // Find brightest RGB channel.
-    //-----------------------------------------------------------
-
     float peak =
         max(
             color.r,
@@ -221,10 +223,6 @@ vec3 aaaHighlightRolloff(vec3 color)
             )
         );
 
-
-    //-----------------------------------------------------------
-    // Begin gently compressing highlights around 75%.
-    //-----------------------------------------------------------
 
     const float shoulderStart =
         0.75;
@@ -236,12 +234,6 @@ vec3 aaaHighlightRolloff(vec3 color)
             peak -
             shoulderStart;
 
-
-        //-------------------------------------------------------
-        // Soft shoulder curve.
-        //
-        // Higher values = stronger highlight compression.
-        //-------------------------------------------------------
 
         float compressedHighlight =
             highlightAmount /
@@ -257,10 +249,6 @@ vec3 aaaHighlightRolloff(vec3 color)
             compressedHighlight;
 
 
-        //-------------------------------------------------------
-        // Preserve hue by scaling all RGB channels together.
-        //-------------------------------------------------------
-
         if (peak > 0.0001)
         {
             color *=
@@ -268,6 +256,68 @@ vec3 aaaHighlightRolloff(vec3 color)
                 peak;
         }
     }
+
+
+    return color;
+}
+
+
+//===============================================================
+// AAA Renderer - Filmic Shadow Toe
+//
+// Preserves subtle detail in very dark areas while leaving
+// midtones and highlights essentially untouched.
+//===============================================================
+
+vec3 aaaShadowToe(vec3 color)
+{
+    //-----------------------------------------------------------
+    // Determine perceptual brightness of the current pixel.
+    //-----------------------------------------------------------
+
+    float luma =
+        dot(
+            color,
+            vec3(
+                0.2126,
+                0.7152,
+                0.0722
+            )
+        );
+
+
+    //-----------------------------------------------------------
+    // Affect primarily the darkest ~20% of the image.
+    //
+    // At black:       strongest effect
+    // Around 0.22:    no effect
+    //-----------------------------------------------------------
+
+    float shadowMask =
+        1.0 -
+        smoothstep(
+            0.02,
+            0.22,
+            luma
+        );
+
+
+    //-----------------------------------------------------------
+    // Very small lift.
+    //
+    // 0.012 = enough to retain texture/detail without turning
+    // dark scenes gray.
+    //-----------------------------------------------------------
+
+    float shadowLift =
+        shadowMask *
+        0.012;
+
+
+    color +=
+        vec3(
+            shadowLift
+        );
 
 
     return color;
@@ -405,14 +455,23 @@ vec3 toneMap(vec3 color)
 
 
     //-----------------------------------------------------------
-    // Cinematic Highlight Rolloff
-    //
-    // Prevent harsh clipping in the brightest portions
-    // of the rendered image.
+    // Filmic Highlight Rolloff
     //-----------------------------------------------------------
 
     color =
         aaaHighlightRolloff(
+            color
+        );
+
+
+    //-----------------------------------------------------------
+    // Filmic Shadow Toe
+    //
+    // Restores a small amount of detail to the deepest shadows.
+    //-----------------------------------------------------------
+
+    color =
+        aaaShadowToe(
             color
         );
 
