@@ -2562,13 +2562,135 @@ void main()
 {
     vec4 diff = vec4(0.f);
     uvec2 point = uvec2(vary_fragcoord * out_screen_res.xy);
+
+    //-----------------------------------------------------------
+    // Standard FidelityFX CAS pass
+    //-----------------------------------------------------------
+
     CasFilter(diff.r, diff.g, diff.b, point, cas_param_0, cas_param_1, true);
-    diff.a = texture(diffuseRect, vary_fragcoord).a;
-    diff.rgb = linear_to_srgb(diff.rgb);
+
+    //-----------------------------------------------------------
+    // Sample the original linear scene color.
+    //
+    // CAS has already produced an edge-adaptive sharpened result.
+    // We use the difference between the CAS result and the source
+    // as a detail signal, then strengthen that signal very gently.
+    //-----------------------------------------------------------
+
+    vec4 sourceColor =
+        texture(
+            diffuseRect,
+            vary_fragcoord
+        );
+
+    diff.a =
+        sourceColor.a;
+
+
+    //===========================================================
+    // AAA RENDERER
+    // Adaptive Clarity Enhancement
+    //
+    // Rather than applying another generic sharpening filter,
+    // this slightly amplifies the detail already identified by
+    // FidelityFX CAS.
+    //
+    // Deep shadows and very bright highlights are protected to
+    // reduce ringing, edge halos and amplified noise.
+    //===========================================================
+
+    vec3 casDetail =
+        diff.rgb -
+        sourceColor.rgb;
+
+
+    float sourceLuma =
+        dot(
+            sourceColor.rgb,
+            vec3(
+                0.2126,
+                0.7152,
+                0.0722
+            )
+        );
+
+
+    //-----------------------------------------------------------
+    // Fade the extra clarity out in near-black areas.
+    //-----------------------------------------------------------
+
+    float shadowProtection =
+        smoothstep(
+            0.02,
+            0.10,
+            sourceLuma
+        );
+
+
+    //-----------------------------------------------------------
+    // Fade the extra clarity out in the brightest highlights.
+    //-----------------------------------------------------------
+
+    float highlightProtection =
+        1.0 -
+        smoothstep(
+            0.78,
+            1.00,
+            sourceLuma
+        );
+
+
+    float clarityMask =
+        shadowProtection *
+        highlightProtection;
+
+
+    //-----------------------------------------------------------
+    // 1.00 = stock CAS result
+    // 1.12 = up to 12% stronger CAS detail in protected midtones
+    //-----------------------------------------------------------
+
+    float clarityStrength =
+        mix(
+            1.0,
+            1.12,
+            clarityMask
+        );
+
+
+    diff.rgb =
+        sourceColor.rgb +
+        casDetail *
+        clarityStrength;
+
+
+    //-----------------------------------------------------------
+    // Keep the linear result in the legal display range before
+    // the existing sRGB conversion.
+    //-----------------------------------------------------------
+
+    diff.rgb =
+        clamp(
+            diff.rgb,
+            vec3(0.0),
+            vec3(1.0)
+        );
+
+
+    //-----------------------------------------------------------
+    // Existing Second Life output conversion
+    //-----------------------------------------------------------
+
+    diff.rgb =
+        linear_to_srgb(
+            diff.rgb
+        );
+
 
 #ifdef LEGACY_GAMMA
     diff.rgb = legacyGamma(diff.rgb);
 #endif
+
 
     frag_color = diff;
 }
