@@ -264,6 +264,7 @@ void main()
     default:
         break;
     }
+
     switch (tm.type & MIX_Y)
     {
     case MIX_Y:
@@ -309,6 +310,7 @@ void main()
     default:
         break;
     }
+
     switch (tm.type & MIX_Z)
     {
     case MIX_Z:
@@ -354,6 +356,7 @@ void main()
     default:
         break;
     }
+
     switch (tm.type & MIX_W)
     {
     case MIX_W:
@@ -405,13 +408,46 @@ void main()
     {
         discard;
     }
-    float base_color_factor_alpha = terrain_mix(tm, vec4(baseColorFactors[0].z, baseColorFactors[1].z, baseColorFactors[2].z, baseColorFactors[3].z));
+
+    float base_color_factor_alpha =
+        terrain_mix(
+            tm,
+            vec4(
+                baseColorFactors[0].z,
+                baseColorFactors[1].z,
+                baseColorFactors[2].z,
+                baseColorFactors[3].z
+            )
+        );
 
 #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
     vec3 tnorm = normalize(pbr_mix.vNt);
+
+    // AAA: preserve full nearby terrain detail while reducing
+    // long-range normal-map shimmer and lighting noise.
+    float aaaTerrainDistanceMask =
+        smoothstep(
+            64.0,
+            320.0,
+            length(vary_position)
+        );
+
+    float aaaTerrainNormalFade =
+        aaaTerrainDistanceMask *
+        0.22;
+
+    tnorm =
+        normalize(
+            mix(
+                tnorm,
+                normalize(vary_normal),
+                aaaTerrainNormalFade
+            )
+        );
 #else
     vec3 tnorm = vary_normal;
 #endif
+
     tnorm *= gl_FrontFacing ? 1.0 : -1.0;
 
 
@@ -436,4 +472,3 @@ void main()
     frag_data[3] = max(vec4(mix_emissive,0), vec4(0));                                                // PBR sRGB Emissive
 #endif
 }
-
