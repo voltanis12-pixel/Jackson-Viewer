@@ -105,6 +105,51 @@ void main()
 
     tnorm *= gl_FrontFacing ? 1.0 : -1.0;
 
+    // AAA: screen-space specular antialiasing.
+    //
+    // Glossy normal maps can generate highlights smaller than a pixel,
+    // causing distant metallic surfaces to sparkle while the camera moves.
+    // Measure local normal variation and add a tightly capped amount of
+    // roughness only to smoother materials.
+    vec3 aaaNormalDx = dFdx(tnorm);
+    vec3 aaaNormalDy = dFdy(tnorm);
+
+    float aaaNormalVariance =
+        0.5 *
+        (
+            dot(aaaNormalDx, aaaNormalDx) +
+            dot(aaaNormalDy, aaaNormalDy)
+        );
+
+    aaaNormalVariance =
+        min(
+            aaaNormalVariance,
+            0.08
+        );
+
+    float aaaGlossMask =
+        1.0 -
+        smoothstep(
+            0.35,
+            0.75,
+            spec.g
+        );
+
+    float aaaRoughnessSquared =
+        spec.g * spec.g +
+        aaaNormalVariance *
+        0.35 *
+        aaaGlossMask;
+
+    spec.g =
+        sqrt(
+            clamp(
+                aaaRoughnessSquared,
+                0.0,
+                1.0
+            )
+        );
+
     //spec.rgb = vec3(1,1,0);
     //col = vec3(0,0,0);
     //emissive = vary_tangent.xyz*0.5+0.5;
@@ -167,4 +212,3 @@ void main()
 }
 
 #endif
-
