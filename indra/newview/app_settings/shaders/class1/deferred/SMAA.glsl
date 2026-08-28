@@ -38,6 +38,18 @@
 
 uniform vec4 SMAA_RT_METRICS;
 
+//===============================================================
+// AAA RENDERER
+// Conservative SMAA edge-sensitivity enhancement
+//
+// 1.00 = stock SMAA edge threshold
+// 0.90 = detect ~10% lower-contrast luma/color edges
+//
+// Search lengths, diagonal handling, corner rounding, and depth
+// edge detection remain unchanged.
+//===============================================================
+#define AAA_SMAA_EDGE_THRESHOLD_SCALE 0.90
+
 /**
  * Copyright (C) 2013 Jorge Jimenez (jorge@iryoku.com)
  * Copyright (C) 2013 Jose I. Echevarria (joseignacioechevarria@gmail.com)
@@ -90,7 +102,7 @@ uniform vec4 SMAA_RT_METRICS;
  *
  * The shader has three passes, chained together as follows:
  *
- *                           |input|------------------�
+ *                           |input|------------------ 
  *                              v                     |
  *                    [ SMAA*EdgeDetection ]          |
  *                              v                     |
@@ -100,7 +112,7 @@ uniform vec4 SMAA_RT_METRICS;
  *                              v                     |
  *                          |blendTex|                |
  *                              v                     |
- *                [ SMAANeighborhoodBlending ] <------�
+ *                [ SMAANeighborhoodBlending ] <------ 
  *                              v
  *                           |output|
  *
@@ -708,7 +720,7 @@ float2 SMAACalculatePredicatedThreshold(float2 texcoord,
     float3 neighbours = SMAAGatherNeighbours(texcoord, offset, SMAATexturePass2D(predicationTex));
     float2 delta = abs(neighbours.xx - neighbours.yz);
     float2 edges = step(SMAA_PREDICATION_THRESHOLD, delta);
-    return SMAA_PREDICATION_SCALE * SMAA_THRESHOLD * (1.0 - SMAA_PREDICATION_STRENGTH * edges);
+    return SMAA_PREDICATION_SCALE * (SMAA_THRESHOLD * AAA_SMAA_EDGE_THRESHOLD_SCALE) * (1.0 - SMAA_PREDICATION_STRENGTH * edges);
 }
 
 #endif  // SMAA_INCLUDE_PS
@@ -789,7 +801,7 @@ float2 SMAALumaEdgeDetectionPS(float2 texcoord,
     #if SMAA_PREDICATION
     float2 threshold = SMAACalculatePredicatedThreshold(texcoord, offset, SMAATexturePass2D(predicationTex));
     #else
-    float2 threshold = float2(SMAA_THRESHOLD, SMAA_THRESHOLD);
+    float2 threshold = float2(SMAA_THRESHOLD * AAA_SMAA_EDGE_THRESHOLD_SCALE, SMAA_THRESHOLD * AAA_SMAA_EDGE_THRESHOLD_SCALE);
     #endif
 
     // Calculate lumas:
@@ -848,7 +860,7 @@ float2 SMAAColorEdgeDetectionPS(float2 texcoord,
     #if SMAA_PREDICATION
     float2 threshold = SMAACalculatePredicatedThreshold(texcoord, offset, predicationTex);
     #else
-    float2 threshold = float2(SMAA_THRESHOLD, SMAA_THRESHOLD);
+    float2 threshold = float2(SMAA_THRESHOLD * AAA_SMAA_EDGE_THRESHOLD_SCALE, SMAA_THRESHOLD * AAA_SMAA_EDGE_THRESHOLD_SCALE);
     #endif
 
     // Calculate color deltas:
