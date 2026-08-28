@@ -35,6 +35,65 @@ vec3 linear_to_srgb(vec3 col);
 
 vec3 atmosFragLighting(vec3 light, vec3 additive, vec3 atten);
 
+
+//===============================================================
+// AAA RENDERER
+// Underwater Visibility Preservation
+//
+// Keep the region's authored waterFogColor, waterFogDensity, and
+// waterFogKS exactly as they are.
+//
+// The stock fog calculation is preserved. We only recover a small
+// amount of transmittance at medium and long viewing distances so
+// underwater scenes do not collapse into near-black too quickly.
+//
+// 0 - 8 m:
+//     completely stock
+//
+// 8 - 80 m:
+//     gradual transition
+//
+// 80 m+:
+//     maximum transmittance exponent = 0.90
+//
+// Because values in the 0..1 range become slightly larger when
+// raised to an exponent below 1.0, distant scene detail remains
+// more readable without changing the authored fog color.
+//===============================================================
+
+float aaaPreserveUnderwaterTransmittance(
+    float stockTransmittance,
+    float physicalDistance
+)
+{
+    stockTransmittance =
+        clamp(
+            stockTransmittance,
+            0.0,
+            1.0
+        );
+
+    float distanceMask =
+        smoothstep(
+            8.0,
+            80.0,
+            physicalDistance
+        );
+
+    float exponent =
+        mix(
+            1.0,
+            0.90,
+            distanceMask
+        );
+
+    return pow(
+        stockTransmittance,
+        exponent
+    );
+}
+
+
 // get a water fog color that will apply the appropriate haze to a color given
 // a blend function of (ONE, SOURCE_ALPHA)
 vec4 getWaterFogViewNoClip(vec3 pos)
@@ -68,7 +127,24 @@ vec4 getWaterFogViewNoClip(vec3 pos)
 
     float L = pow(min(t1/t2*t3, 1.0), 1.0/1.7);
 
+    //-----------------------------------------------------------
+    // Stock Second Life transmittance.
+    //-----------------------------------------------------------
+
     float D = pow(0.98, l*kd);
+
+    //===========================================================
+    // AAA RENDERER
+    // Recover only a small amount of medium/long-distance light.
+    //
+    // Fog color contribution L stays stock.
+    //===========================================================
+
+    D =
+        aaaPreserveUnderwaterTransmittance(
+            D,
+            l
+        );
 
     return vec4(srgb_to_linear(kc.rgb)*L, D);
 }
