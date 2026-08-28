@@ -41,6 +41,22 @@ in vec4 vary_texcoord1;
 void mirrorClip(vec3 position);
 vec4 encodeNormal(vec3 n, float env, float gbuffer_flag);
 
+float aaaTerrainBlendWeight(float weight)
+{
+    float shapedWeight =
+        smoothstep(
+            0.0,
+            1.0,
+            weight
+        );
+
+    return mix(
+        weight,
+        shapedWeight,
+        0.20
+    );
+}
+
 void main()
 {
     mirrorClip(pos);
@@ -54,6 +70,13 @@ void main()
     float alpha1 = texture(alpha_ramp, vary_texcoord0.zw).a;
     float alpha2 = texture(alpha_ramp,vary_texcoord1.xy).a;
     float alphaFinal = texture(alpha_ramp, vary_texcoord1.zw).a;
+
+    // AAA: subtly improve definition between legacy terrain layers
+    // without moving the authored transition boundaries.
+    alpha1 = aaaTerrainBlendWeight(alpha1);
+    alpha2 = aaaTerrainBlendWeight(alpha2);
+    alphaFinal = aaaTerrainBlendWeight(alphaFinal);
+
     vec4 outColor = mix( mix(color3, color2, alpha2), mix(color1, color0, alpha1), alphaFinal );
 
     outColor.a = 0.0; // yes, downstream atmospherics
@@ -67,4 +90,3 @@ void main()
     frag_data[3] = vec4(0);
 #endif
 }
-
