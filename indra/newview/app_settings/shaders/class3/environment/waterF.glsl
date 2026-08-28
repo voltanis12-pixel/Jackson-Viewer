@@ -139,6 +139,44 @@ void sampleReflectionProbesLegacy(inout vec3 ambenv, inout vec3 glossenv, inout 
 
 vec3 getPositionWithNDC(vec3 ndc);
 
+//===============================================================
+// AAA RENDERER
+// Distance-Stabilized Water Distortion
+//
+// Keeps nearby water completely stock, then gently reduces only
+// the screen-space reflection/refraction distortion with distance.
+//
+// This does NOT change:
+//   - water color
+//   - Fresnel response
+//   - wave normals used for lighting
+//   - reflection-probe brightness
+//   - sun/specular intensity
+//   - shoreline fade
+//
+// The goal is simply to reduce distant high-frequency shimmer and
+// make reflected scenery read more coherently.
+//===============================================================
+
+float aaaWaterDistortionDistanceScale(float distanceFromCamera)
+{
+    float distanceMask =
+        smoothstep(
+            48.0,
+            220.0,
+            distanceFromCamera
+        );
+
+    // 1.00 = stock nearby distortion
+    // 0.72 = maximum distant stabilization
+    return mix(
+        1.0,
+        0.72,
+        distanceMask
+    );
+}
+
+
 void generateWaveNormals(out vec3 wave1, out vec3 wave2, out vec3 wave3)
 {
     // Generate all of our wave normals.
@@ -240,8 +278,30 @@ void main()
     float dist2 = dist;
     dist = max(dist, 5.0);
 
+    //===========================================================
+    // AAA RENDERER
+    // Distance-stabilized reflection/refraction distortion.
+    //
+    // Near water remains exactly stock. Only the screen-space
+    // distortion amplitude is reduced at longer viewing distances.
+    //===========================================================
+
+    float aaaDistortionScale =
+        aaaWaterDistortionDistanceScale(
+            dist
+        );
+
     //figure out distortion vector (ripply)
-    vec2 distort2 = distort + waver.xy * refScale / max(dmod, 1.0) * 2;
+    vec2 distort2 =
+        distort +
+        waver.xy *
+        aaaDistortionScale *
+        refScale /
+        max(
+            dmod,
+            1.0
+        ) *
+        2.0;
 
     distort2 = clamp(distort2, vec2(0), vec2(0.999));
 
