@@ -219,7 +219,13 @@ void main()
     // Combine
     vec3 color;
     color = (cloudColorSun*(1.-alpha2) + cloudColorAmbient);
-    color.rgb = clamp(color.rgb, vec3(0), vec3(1));
+
+    // AAA renderer:
+    // Preserve HDR cloud-lighting values for downstream tone mapping.
+    // The stock shader clamps the cloud lighting to 1.0 before doubling
+    // it, which can flatten bright cloud structure into the same value.
+    // Keep the lower bound for safety, but do not hard-clip the upper end.
+    color.rgb = max(color.rgb, vec3(0.0));
     color.rgb *= 2.0;
 
     /// Gamma correct for WL (soft clip effect).
@@ -234,4 +240,3 @@ void main()
     frag_data[0] = vec4(color.rgb, alpha1);
 #endif
 }
-
