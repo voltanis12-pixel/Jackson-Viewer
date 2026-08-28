@@ -188,6 +188,15 @@ void main()
     vec3  radiance  = vec3(0);
     sampleReflectionProbes(irradiance, radiance, vary_position.xy*0.5+0.5, pos.xyz, norm.xyz, gloss, true, amblit);
 
+#ifndef HAS_ALPHA_MASK
+    // AAA: improve edge definition on smooth alpha-blended PBR materials.
+    // Frontal views and rough surfaces remain effectively stock.
+    float aaaNdotV = clamp(dot(norm.xyz, -normalize(pos.xyz)), 0.0, 1.0);
+    float aaaGrazingReflection = pow(1.0 - aaaNdotV, 5.0);
+    float aaaSmoothSurface = smoothstep(0.35, 0.90, gloss);
+    radiance *= mix(1.0, 1.10, aaaGrazingReflection * aaaSmoothSurface);
+#endif
+
     vec3 diffuseColor = vec3(0.0);
     vec3 specularColor = vec3(0.0);
     calcDiffuseSpecular(col.rgb, metallic, diffuseColor, specularColor);
