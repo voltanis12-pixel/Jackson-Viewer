@@ -250,6 +250,88 @@ vec3 getProjectedLightDiffuseColor(float light_distance, vec2 projected_uv)
     float lod = diff * proj_lod;
     vec4 plcol = getTexture2DLodDiffuse(projected_uv.xy, lod);
 
+    //===========================================================
+    // AAA RENDERER
+    // Stronger Projector Hotspot Compression v2
+    //
+    // The first test proved that the projected-light hotspot is
+    // being driven by very bright, opaque projector texels, but a
+    // 28% reduction was not enough because the spotlight shader
+    // later multiplies projected diffuse lighting by 3.25.
+    //
+    // This version leaves dim and medium projector texels alone,
+    // then progressively compresses only bright + opaque texels.
+    //
+    // The brightest fully opaque projector texels are limited to
+    // roughly 30% of their original RGB level before the later
+    // spotlight intensity multiplier is applied.
+    //===========================================================
+
+    float projectorPeak =
+        max(
+            plcol.r,
+            max(
+                plcol.g,
+                plcol.b
+            )
+        );
+
+    //-----------------------------------------------------------
+    // Do not touch normal / moderate projector imagery.
+    //-----------------------------------------------------------
+
+    float brightMask =
+        smoothstep(
+            0.65,
+            0.95,
+            projectorPeak
+        );
+
+    //-----------------------------------------------------------
+    // Favor compression on opaque projector texels.
+    //-----------------------------------------------------------
+
+    float opaqueMask =
+        smoothstep(
+            0.55,
+            1.00,
+            plcol.a
+        );
+
+    float hotspotMask =
+        brightMask *
+        opaqueMask;
+
+    //-----------------------------------------------------------
+    // At maximum strength, target a peak around 0.30 before the
+    // downstream 3.25 spotlight multiplier.
+    //
+    // Scale RGB together to preserve hue.
+    //-----------------------------------------------------------
+
+    float targetPeak =
+        0.30;
+
+    float compressedScale =
+        min(
+            1.0,
+            targetPeak /
+            max(
+                projectorPeak,
+                0.0001
+            )
+        );
+
+    float hotspotScale =
+        mix(
+            1.0,
+            compressedScale,
+            hotspotMask
+        );
+
+    plcol.rgb *=
+        hotspotScale;
+
     return color.rgb * plcol.rgb * plcol.a;
 }
 
