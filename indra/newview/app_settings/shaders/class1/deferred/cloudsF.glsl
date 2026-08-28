@@ -216,15 +216,18 @@ void main()
     alpha2 = 1. - alpha2;
     alpha2 = 1. - alpha2 * alpha2;
 
+    // AAA renderer:
+    // Increase only the contrast of the existing cloud self-shadow mask.
+    // This does not change cloud opacity/density; it makes dense portions
+    // shade a little more strongly while open portions retain more light.
+    alpha2 = clamp((alpha2 - 0.5) * 1.10 + 0.5, 0.0, 1.0);
+
     // Combine
     vec3 color;
     color = (cloudColorSun*(1.-alpha2) + cloudColorAmbient);
 
     // AAA renderer:
     // Preserve HDR cloud-lighting values for downstream tone mapping.
-    // The stock shader clamps the cloud lighting to 1.0 before doubling
-    // it, which can flatten bright cloud structure into the same value.
-    // Keep the lower bound for safety, but do not hard-clip the upper end.
     color.rgb = max(color.rgb, vec3(0.0));
     color.rgb *= 2.0;
 
