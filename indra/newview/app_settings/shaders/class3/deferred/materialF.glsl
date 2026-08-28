@@ -307,6 +307,44 @@ void main()
     float glossiness = specular_color.a;
     vec3 norm = getNormal(glossiness);
 
+#ifdef HAS_NORMAL_MAP
+    // AAA: reduce legacy specular aliasing where glossy normal maps
+    // contain more variation than the screen can resolve.
+    vec3 aaaNormalDx = dFdx(norm);
+    vec3 aaaNormalDy = dFdy(norm);
+
+    float aaaNormalVariance =
+        0.5 *
+        (
+            dot(aaaNormalDx, aaaNormalDx) +
+            dot(aaaNormalDy, aaaNormalDy)
+        );
+
+    aaaNormalVariance =
+        min(
+            aaaNormalVariance,
+            0.08
+        );
+
+    float aaaGlossMask =
+        smoothstep(
+            0.35,
+            0.80,
+            glossiness
+        );
+
+    float aaaGlossReduction =
+        min(
+            aaaNormalVariance * 2.0,
+            0.16
+        ) *
+        aaaGlossMask;
+
+    glossiness *=
+        1.0 -
+        aaaGlossReduction;
+#endif
+
     float emissive = getEmissive(diffcol);
 
 #if (DIFFUSE_ALPHA_MODE == DIFFUSE_ALPHA_MODE_BLEND)
