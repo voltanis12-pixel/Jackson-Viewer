@@ -381,10 +381,69 @@ void main()
     pbrPunctual(diffuseColor, specularColor, perceptualRoughness, metallic, normalize(wavef+up*max(dist, 32.0)/32.0*(1.0-vdu)), v, normalize(light_dir), nl, diffPunc, specPunc);
 
     vec3 punctual = clamp(nl * (diffPunc + specPunc), vec3(0), vec3(10)) * sunlit_linear * shadow * atten;
-    radiance *= df2.y;
+    //===========================================================
+    // AAA RENDERER
+    // Gentle Grazing-Angle Fresnel Reinforcement
+    //
+    // Keep the existing Second Life Fresnel calculation as the
+    // base, but add a small Schlick-style grazing response.
+    //
+    // Looking mostly downward at the water:
+    //     essentially stock
+    //
+    // Looking across the water at a shallow angle:
+    //     slightly stronger reflections
+    //
+    // Maximum changes at extreme grazing:
+    //     +8% reflected radiance
+    //     +10% reflection blend toward radiance
+    //
+    // This does not alter wave normals, water color, shoreline
+    // fade, transparency, or the committed distance-stabilized
+    // distortion.
+    //===========================================================
+
+    float aaaGrazingFresnel =
+        pow(
+            1.0 -
+            NdotV,
+            5.0
+        );
+
+    float aaaRadianceScale =
+        1.0 +
+        0.08 *
+        aaaGrazingFresnel;
+
+    radiance *=
+        df2.y *
+        aaaRadianceScale;
+
     //radiance = toneMapNoExposure(radiance);
+
+    float aaaBaseReflectionMix =
+        min(
+            1.0,
+            df2.x
+        );
+
+    float aaaReflectionMix =
+        mix(
+            aaaBaseReflectionMix,
+            1.0,
+            0.10 *
+            aaaGrazingFresnel
+        );
+
+    aaaReflectionMix =
+        clamp(
+            aaaReflectionMix,
+            0.0,
+            1.0
+        );
+
     vec3 color = vec3(0);
-    color = mix(fb.rgb, radiance, min(1, df2.x)) + punctual.rgb;
+    color = mix(fb.rgb, radiance, aaaReflectionMix) + punctual.rgb;
 
     float water_haze_scale = 4;
 
