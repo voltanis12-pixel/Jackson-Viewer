@@ -206,7 +206,15 @@ void main()
         color.rgb += rainbow(optic_d);
         color.rgb += halo_22;
         color.rgb *= 2.;
-        color.rgb = clamp(color.rgb, vec3(0), vec3(5));
+
+        // AAA renderer:
+        // Preserve more of the procedural sky's HDR range before
+        // downstream tone mapping.  The stock 5.0 ceiling can flatten
+        // very bright sun-adjacent haze, halos, and intense horizon light.
+        //
+        // Keep a conservative finite safety ceiling rather than removing
+        // the guard entirely.
+        color.rgb = clamp(color.rgb, vec3(0), vec3(12));
 
         frag_data[2] = vec4(0.0,0.0,0.0,GBUFFER_FLAG_SKIP_ATMOS);
     }
@@ -220,4 +228,3 @@ void main()
     frag_data[0] = vec4(color.rgb, 1.0);
 #endif
 }
-
