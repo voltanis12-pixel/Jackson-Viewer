@@ -461,6 +461,40 @@ void main()
 
     float spec = min(max(max(punctual.r, punctual.g), punctual.b), 0);
 
-    frag_color = min(vec4(1),max(vec4(color.rgb, spec * water_mask), vec4(0)));
+    //===========================================================
+    // AAA RENDERER
+    // HDR-Safe Water Output
+    //
+    // Stock behavior hard-clamps the completed water color to
+    // 1.0 here:
+    //
+    //     min(vec4(1), ...)
+    //
+    // That can destroy bright reflection / sun-glint detail before
+    // later tone mapping has a chance to compress it naturally.
+    //
+    // Preserve the lower clamp for safety, but remove only the
+    // upper 1.0 clamp so HDR water highlights can pass downstream.
+    //
+    // This does NOT alter:
+    //   - wave normals
+    //   - water color
+    //   - Fresnel math
+    //   - reflection strength
+    //   - shoreline fade
+    //   - transparency/refraction
+    //   - committed distant-water stabilization
+    //===========================================================
+
+    frag_color =
+        max(
+            vec4(
+                color.rgb,
+                spec * water_mask
+            ),
+            vec4(
+                0.0
+            )
+        );
 }
 
