@@ -29,8 +29,9 @@ uniform sampler2D exposureMap;
 uniform vec2 screen_res;
 in vec2 vary_fragcoord;
 
+
 //===============================================================
-// tone mapping taken from Khronos sample implementation
+// Tone mapping taken from Khronos sample implementation
 //===============================================================
 
 // sRGB => XYZ => D65_2_D60 => AP1 => RRT_SAT
@@ -50,8 +51,8 @@ const mat3 ACESOutputMat = mat3
     -0.07367, -0.00605,  1.07602
 );
 
+
 // ACES tone map (faster approximation)
-// see: https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/
 vec3 toneMapACES_Narkowicz(vec3 color)
 {
     const float A = 2.51;
@@ -59,119 +60,355 @@ vec3 toneMapACES_Narkowicz(vec3 color)
     const float C = 2.43;
     const float D = 0.59;
     const float E = 0.14;
-    return clamp((color * (A * color + B)) / (color * (C * color + D) + E), 0.0, 1.0);
+
+    return clamp(
+        (color * (A * color + B)) /
+        (color * (C * color + D) + E),
+        0.0,
+        1.0
+    );
 }
 
 
 // ACES filmic tone map approximation
-// see https://github.com/TheRealMJP/BakingLab/blob/master/BakingLab/ACES.hlsl
 vec3 RRTAndODTFit(vec3 color)
 {
-    vec3 a = color * (color + 0.0245786) - 0.000090537;
-    vec3 b = color * (0.983729 * color + 0.4329510) + 0.238081;
+    vec3 a =
+        color *
+        (color + 0.0245786) -
+        0.000090537;
+
+    vec3 b =
+        color *
+        (0.983729 * color + 0.4329510) +
+        0.238081;
+
     return a / b;
 }
 
 
-// tone mapping
+// Tone mapping
 vec3 toneMapACES_Hill(vec3 color)
 {
-    color = ACESInputMat * color;
+    color =
+        ACESInputMat *
+        color;
 
-    // Apply RRT and ODT
-    color = RRTAndODTFit(color);
+    color =
+        RRTAndODTFit(
+            color
+        );
 
-    color = ACESOutputMat * color;
+    color =
+        ACESOutputMat *
+        color;
 
-    // Clamp to [0, 1]
-    color = clamp(color, 0.0, 1.0);
+    color =
+        clamp(
+            color,
+            0.0,
+            1.0
+        );
 
     return color;
 }
 
-// Khronos Neutral tonemapping
-// https://github.com/KhronosGroup/ToneMapping/tree/main
-// Input color is non-negative and resides in the Linear Rec. 709 color space.
-// Output color is also Linear Rec. 709, but in the [0, 1] range.
-vec3 PBRNeutralToneMapping( vec3 color )
+
+//===============================================================
+// Khronos Neutral Tone Mapping
+//===============================================================
+
+vec3 PBRNeutralToneMapping(vec3 color)
 {
-  const float startCompression = 0.8 - 0.04;
-  const float desaturation = 0.15;
+    const float startCompression =
+        0.8 - 0.04;
 
-  float x = min(color.r, min(color.g, color.b));
-  float offset = x < 0.08 ? x - 6.25 * x * x : 0.04;
-  color -= offset;
+    const float desaturation =
+        0.15;
 
-  float peak = max(color.r, max(color.g, color.b));
-  if (peak < startCompression) return color;
 
-  const float d = 1. - startCompression;
-  float newPeak = 1. - d * d / (peak + d - startCompression);
-  color *= newPeak / peak;
+    float x =
+        min(
+            color.r,
+            min(
+                color.g,
+                color.b
+            )
+        );
 
-  float g = 1. - 1. / (desaturation * (peak - newPeak) + 1.);
-  return mix(color, newPeak * vec3(1, 1, 1), g);
+
+    float offset =
+        x < 0.08
+        ? x - 6.25 * x * x
+        : 0.04;
+
+
+    color -=
+        offset;
+
+
+    float peak =
+        max(
+            color.r,
+            max(
+                color.g,
+                color.b
+            )
+        );
+
+
+    if (peak < startCompression)
+    {
+        return color;
+    }
+
+
+    const float d =
+        1.0 -
+        startCompression;
+
+
+    float newPeak =
+        1.0 -
+        d * d /
+        (
+            peak +
+            d -
+            startCompression
+        );
+
+
+    color *=
+        newPeak /
+        peak;
+
+
+    float g =
+        1.0 -
+        1.0 /
+        (
+            desaturation *
+            (
+                peak -
+                newPeak
+            ) +
+            1.0
+        );
+
+
+    return mix(
+        color,
+        newPeak *
+        vec3(
+            1.0,
+            1.0,
+            1.0
+        ),
+        g
+    );
 }
+
 
 uniform float exposure;
 uniform float tonemap_mix;
 uniform int tonemap_type;
 
 
-vec3 toneMap(vec3 color)
+//===============================================================
+// AAA RENDERER
+// Gentle Highlight Shoulder
+//
+// This is deliberately the ONLY custom tone-mapping change.
+//
+// Shadows and midtones are untouched.
+//
+// Very bright pixels receive a small, hue-preserving compression
+// to reduce harsh clipping and create a smoother cinematic
+// highlight transition.
+//===============================================================
+
+vec3 aaaHighlightShoulder(vec3 color)
 {
-#ifndef NO_POST
-    vec3 linear_input_color = color;
+    float peak =
+        max(
+            color.r,
+            max(
+                color.g,
+                color.b
+            )
+        );
 
-    float exp_scale = texture(exposureMap, vec2(0.5,0.5)).r;
-    float final_exposure = exposure * exp_scale;
-    vec3 exposed_color = color * final_exposure;
 
-    vec3 tonemapped_color = exposed_color;
-    switch(tonemap_type)
+    //-----------------------------------------------------------
+    // Do absolutely nothing below 82% brightness.
+    //-----------------------------------------------------------
+
+    const float shoulderStart =
+        0.82;
+
+
+    if (peak <= shoulderStart)
     {
-    case 0:
-        tonemapped_color = PBRNeutralToneMapping(exposed_color);
-        break;
-    case 1:
-        tonemapped_color = toneMapACES_Hill(exposed_color);
-        break;
+        return color;
     }
 
-    vec3 exposed_linear_input = linear_input_color * final_exposure;
-    color = mix(exposed_linear_input, tonemapped_color, tonemap_mix);
 
-    color = clamp(color, 0.0, 1.0);
-#else
-    color *= exposure * texture(exposureMap, vec2(0.5,0.5)).r;
-    color = clamp(color, 0.0, 1.0);
-#endif
+    //-----------------------------------------------------------
+    // Amount above the shoulder threshold.
+    //-----------------------------------------------------------
+
+    float highlight =
+        peak -
+        shoulderStart;
+
+
+    //-----------------------------------------------------------
+    // Very gentle compression.
+    //
+    // The lower this multiplier, the weaker the effect.
+    //-----------------------------------------------------------
+
+    float compressed =
+        highlight /
+        (
+            1.0 +
+            0.65 *
+            highlight
+        );
+
+
+    float newPeak =
+        shoulderStart +
+        compressed;
+
+
+    //-----------------------------------------------------------
+    // Preserve hue by scaling RGB together.
+    //-----------------------------------------------------------
+
+    if (peak > 0.0001)
+    {
+        color *=
+            newPeak /
+            peak;
+    }
+
 
     return color;
 }
 
 
-vec3 toneMapNoExposure(vec3 color)
+//===============================================================
+// Main Tone Mapping
+//===============================================================
+
+vec3 toneMap(vec3 color)
 {
 #ifndef NO_POST
-    vec3 linear_input_color = color;
 
-    vec3 tonemapped_color = color;
-    switch(tonemap_type)
+    vec3 linear_input_color =
+        color;
+
+
+    float exp_scale =
+        texture(
+            exposureMap,
+            vec2(
+                0.5,
+                0.5
+            )
+        ).r;
+
+
+    float final_exposure =
+        exposure *
+        exp_scale;
+
+
+    vec3 exposed_color =
+        color *
+        final_exposure;
+
+
+    vec3 tonemapped_color =
+        exposed_color;
+
+
+    switch (tonemap_type)
     {
-    case 0:
-        tonemapped_color = PBRNeutralToneMapping(color);
-        break;
-    case 1:
-        tonemapped_color = toneMapACES_Hill(color);
-        break;
+        case 0:
+
+            tonemapped_color =
+                PBRNeutralToneMapping(
+                    exposed_color
+                );
+
+            break;
+
+
+        case 1:
+
+            tonemapped_color =
+                toneMapACES_Hill(
+                    exposed_color
+                );
+
+            break;
     }
 
-    color = mix(linear_input_color, tonemapped_color, tonemap_mix);
 
-    color = clamp(color, 0.0, 1.0);
+    vec3 exposed_linear_input =
+        linear_input_color *
+        final_exposure;
+
+
+    color =
+        mix(
+            exposed_linear_input,
+            tonemapped_color,
+            tonemap_mix
+        );
+
+
+    //===========================================================
+    // AAA RENDERER
+    // Gentle highlight rolloff only
+    //===========================================================
+
+    color =
+        aaaHighlightShoulder(
+            color
+        );
+
+
+    color =
+        clamp(
+            color,
+            0.0,
+            1.0
+        );
+
+
 #else
-     color = clamp(color, 0.0, 1.0);
+
+    color *=
+        exposure *
+        texture(
+            exposureMap,
+            vec2(
+                0.5,
+                0.5
+            )
+        ).r;
+
+
+    color =
+        clamp(
+            color,
+            0.0,
+            1.0
+        );
+
 #endif
 
     return color;
@@ -179,13 +416,112 @@ vec3 toneMapNoExposure(vec3 color)
 
 
 //===============================================================
+// Tone Mapping Without Exposure
+//===============================================================
+
+vec3 toneMapNoExposure(vec3 color)
+{
+#ifndef NO_POST
+
+    vec3 linear_input_color =
+        color;
+
+
+    vec3 tonemapped_color =
+        color;
+
+
+    switch (tonemap_type)
+    {
+        case 0:
+
+            tonemapped_color =
+                PBRNeutralToneMapping(
+                    color
+                );
+
+            break;
+
+
+        case 1:
+
+            tonemapped_color =
+                toneMapACES_Hill(
+                    color
+                );
+
+            break;
+    }
+
+
+    color =
+        mix(
+            linear_input_color,
+            tonemapped_color,
+            tonemap_mix
+        );
+
+
+    color =
+        clamp(
+            color,
+            0.0,
+            1.0
+        );
+
+
+#else
+
+    color =
+        clamp(
+            color,
+            0.0,
+            1.0
+        );
+
+#endif
+
+    return color;
+}
+
+
+//===============================================================
+// Exposure Debug Visualization
+//===============================================================
 
 void debugExposure(inout vec3 color)
 {
-    float exp_scale = texture(exposureMap, vec2(0.5,0.5)).r;
-    exp_scale *= 0.5;
-    if (abs(vary_fragcoord.y-exp_scale) < 0.01 && vary_fragcoord.x < 0.1)
+    float exp_scale =
+        texture(
+            exposureMap,
+            vec2(
+                0.5,
+                0.5
+            )
+        ).r;
+
+
+    exp_scale *=
+        0.5;
+
+
+    if
+    (
+        abs(
+            vary_fragcoord.y -
+            exp_scale
+        ) <
+        0.01
+        &&
+        vary_fragcoord.x <
+        0.1
+    )
     {
-        color = vec3(1,0,0);
+        color =
+            vec3(
+                1.0,
+                0.0,
+                0.0
+            );
     }
 }
