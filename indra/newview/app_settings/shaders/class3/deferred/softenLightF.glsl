@@ -178,6 +178,11 @@ void main()
 
         sampleReflectionProbes(irradiance, radiance, tc, pos.xyz, gb.normal, gloss, false, amblit_linear);
 
+        // AAA: subtly strengthen reflection-probe response on smoother PBR materials.
+        // Rough surfaces remain stock while highly glossy surfaces receive up to 8% more radiance.
+        float aaaGlossResponse = smoothstep(0.35, 0.90, gloss);
+        radiance *= mix(1.0, 1.08, aaaGlossResponse);
+
         adjustIrradiance(irradiance, ambocc);
 
         vec3 diffuseColor = vec3(0.0);
@@ -270,7 +275,8 @@ void main()
         color.rgb = mix(color.rgb, baseColor.rgb, baseColor.a);
 
         if (envIntensity > 0.0)
-        {  // add environment map
+        {
+            // add environment map
             applyLegacyEnv(color, legacyenv, spec, pos.xyz, gb.normal, envIntensity);
         }
    }
