@@ -81,6 +81,12 @@ LLPanelLogin *LLPanelLogin::sInstance = NULL;
 bool LLPanelLogin::sCapslockDidNotification = false;
 bool LLPanelLogin::sCredentialSet = false;
 
+namespace
+{
+    constexpr S32 LOGIN_WEB_COLLAPSED_HEIGHT = 84;
+    constexpr S32 LOGIN_WEB_EXPANDED_HEIGHT = 190;
+}
+
 // Helper functions
 
 LLPointer<LLCredential> load_user_credentials(std::string &user_key)
@@ -206,7 +212,10 @@ LLPanelLogin::LLPanelLogin(const LLRect &rect,
     mLocationLength(0),
     mShowFavorites(false),
     mAlertNotif(false),
-    mLoginBtn(nullptr)
+    mLoginBtn(nullptr),
+    mWebContainer(nullptr),
+    mWebPanelExpanded(false),
+    mWebBrowser(nullptr)
 {
     setBackgroundVisible(false);
     setBackgroundOpaque(true);
@@ -240,6 +249,7 @@ LLPanelLogin::LLPanelLogin(const LLRect &rect,
 
     mLoginStack = getChild<LLLayoutStack>("login_stack");
     mGridPanel = getChild<LLLayoutPanel>("grid_panel");
+    mWebContainer = getChild<LLPanel>("web_container");
 
     std::string current_grid = LLGridManager::getInstance()->getGrid();
 
@@ -322,6 +332,11 @@ LLPanelLogin::LLPanelLogin(const LLRect &rect,
     mWebBrowser = getChild<LLMediaCtrl>("login_html");
     mWebBrowser->addObserver(this);
 
+    // AAA login v9: keep the destination browser as a thin rail until
+    // the user clicks it. The expanded panel overlays the background
+    // and collapses again when the user clicks elsewhere on the login screen.
+    setWebPanelExpanded(false);
+
     loadLoginPage();
 
     LLComboBox* username_combo(getChild<LLComboBox>("username_combo"));
@@ -337,6 +352,59 @@ LLPanelLogin::LLPanelLogin(const LLRect &rect,
     getChild<LLCheckBoxCtrl>("remember_password")->setCommitCallback(boost::bind(&LLPanelLogin::onRememberPasswordCheck, this));
 
     mAlertListener = LLNotifications::instance().getChannel("Alerts")->connectChanged([this](const LLSD& notify){ return onUpdateNotification(notify); });
+}
+
+bool LLPanelLogin::handleMouseDown(S32 x, S32 y, MASK mask)
+{
+    if (mWebContainer)
+    {
+        const bool mouse_over_web = mWebContainer->parentPointInView(x, y);
+
+        if (!mWebPanelExpanded && mouse_over_web)
+        {
+            // Expand before dispatching the click so the original web tab
+            // still receives the same mouse event.
+            setWebPanelExpanded(true);
+        }
+        else if (mWebPanelExpanded && !mouse_over_web)
+        {
+            // Clicking anywhere outside the expanded destination panel
+            // restores the compact rail without consuming the click.
+            setWebPanelExpanded(false);
+        }
+    }
+
+    return LLPanel::handleMouseDown(x, y, mask);
+}
+
+void LLPanelLogin::setWebPanelExpanded(bool expanded)
+{
+    if (!mWebContainer)
+    {
+        return;
+    }
+
+    const S32 target_height = expanded
+        ? LOGIN_WEB_EXPANDED_HEIGHT
+        : LOGIN_WEB_COLLAPSED_HEIGHT;
+
+    LLRect web_rect = mWebContainer->getRect();
+
+    if (web_rect.getHeight() != target_height)
+    {
+        // Preserve the top edge and grow/shrink downward over the background.
+        web_rect.mBottom = web_rect.mTop - target_height;
+        mWebContainer->setShape(web_rect);
+    }
+
+    mWebPanelExpanded = expanded;
+
+    if (mWebBrowser)
+    {
+        // Make sure the embedded browser redraws immediately after its
+        // containing panel changes size.
+        mWebBrowser->setForceUpdate(true);
+    }
 }
 
 void LLPanelLogin::addFavoritesToStartLocation()

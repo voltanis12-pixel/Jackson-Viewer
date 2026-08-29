@@ -51,6 +51,7 @@ public:
     void draw();
 
     virtual void setFocus( bool b );
+    /*virtual*/ bool handleMouseDown(S32 x, S32 y, MASK mask);
 
     static void show(const LLRect &rect,
         void (*callback)(S32 option, void* user_data),
@@ -96,6 +97,7 @@ private:
     void addFavoritesToStartLocation();
     void onSelectServer();
     void onLocationSLURL();
+    void setWebPanelExpanded(bool expanded);
 
     static void setFields(LLPointer<LLCredential> credential);
 
@@ -141,6 +143,8 @@ private:
     LLLayoutPanel* mGridPanel;
     LLLayoutStack* mLoginStack;
 
+    LLPanel* mWebContainer;
+    bool mWebPanelExpanded;
     LLMediaCtrl* mWebBrowser;
 };
 
