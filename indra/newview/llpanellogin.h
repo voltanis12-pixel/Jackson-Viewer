@@ -28,6 +28,7 @@
 #define LL_LLPANELLOGIN_H
 
 #include "llpanel.h"
+#include <string>
 #include "llpointer.h"          // LLPointer<>
 #include "llmediactrl.h"    // LLMediaCtrlObserver
 
@@ -146,6 +147,7 @@ private:
     LLPanel* mWebContainer;
     bool mWebPanelExpanded;
     LLMediaCtrl* mWebBrowser;
+    LLMediaCtrl* mVideoBrowser;
 };
 
 #endif

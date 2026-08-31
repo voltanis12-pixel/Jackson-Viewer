@@ -5,9 +5,8 @@
  layout="topleft"
  name="panel_login"
  focus_root="true"
- background_visible="true"
- bg_opaque_color="DkGrayLogin"
- background_opaque="true"
+ background_visible="false"
+ background_opaque="false"
  width="1024">
 
   <panel.string name="forgot_password_url">
@@ -18,7 +17,7 @@
     https://join.secondlife.com/
   </panel.string>
 
-  <!-- Full-screen custom background -->
+  <!-- Scenic background only. No login card is baked into this image. -->
   <icon
    follows="all"
    height="768"
@@ -30,400 +29,374 @@
    top="0"
    width="1024" />
 
-  <!-- v8 isolated change:
-       Compress the top destination/browser area so it behaves like a thin top rail.
-       Bottom login rail remains unchanged from the v7 passing layout. -->
-  <panel
-   follows="left|right|top"
-   height="84"
+
+  <!-- Nova cinematic background video. The static image above remains as the
+       fallback underneath while the local media page initializes. -->
+  <web_browser
+   follows="all"
    layout="topleft"
    left="0"
-   name="web_container"
-   background_visible="true"
-   bg_opaque_color="DkGrayLogin"
-   background_opaque="true"
    top="0"
-   width="1024">
+   width="1024"
+   height="768"
+   ignore_ui_scale="false"
+   name="nova_video_html"
+   start_url=""
+   tab_stop="false"
+   focus_on_click="false"
+   mouse_opaque="false"
+   trusted_content="true"
+   hide_loading="true"
+   border_visible="false"
+   decouple_texture_size="true"
+   texture_width="1920"
+   texture_height="1080"
+   cover_media="true"
+   bg_opaque_color="0.012 0.025 0.055 1" />
+
+  <!-- Hidden browser retained for compatibility with LLPanelLogin. -->
+  <panel
+   follows="left|top"
+   height="1"
+   layout="topleft"
+   left="-4000"
+   name="web_container"
+   background_visible="false"
+   background_opaque="false"
+   top="-4000"
+   width="1">
 
     <web_browser
      tab_stop="false"
      trusted_content="true"
-     bg_opaque_color="DkGrayLogin"
      border_visible="false"
      follows="all"
      left="0"
      top="0"
-     right="-1"
-     bottom="-1"
+     right="0"
+     bottom="0"
      name="login_html"
      start_url="" />
   </panel>
 
-  <!-- Passed compact bottom rail -->
+  <!--
+       REAL LOGIN CARD
+       The ornate card skin is a separate UI texture (login_sl_logo.png),
+       independently positioned from the scenic background.
+  -->
   <panel
-   follows="left|right|bottom"
-   height="130"
+   follows="right|top"
+   height="665"
    layout="topleft"
-   left="0"
-   name="login_rail"
-   background_visible="true"
-   bg_opaque_color="PanelDark"
-   background_opaque="true"
-   top="638"
-   width="1024">
+   right="-10"
+   name="login_card"
+   background_visible="false"
+   background_opaque="false"
+   top="675"
+   width="620">
 
-    <layout_stack
+    <icon
      follows="all"
+     height="665"
+     image_name="login_sl_logo"
      layout="topleft"
-     orientation="horizontal"
-     name="rail_centering_stack"
-     border_size="0"
-     animate="false"
      left="0"
+     name="login_card_skin"
+     scale_image="true"
      top="0"
-     height="130"
-     width="1024">
+     width="620" />
 
-      <layout_panel
-       auto_resize="true"
-       user_resize="false"
-       layout="topleft"
-       name="rail_left_spacer"
-       background_visible="false"
-       min_width="0"
-       expanded_min_dim="0"
-       width="1" />
+    <!-- Cover only the baked placeholder text portions while preserving
+         the decorative icons and field borders from the card skin. -->
+    <panel
+     follows="left|top"
+     height="48"
+     left="155"
+     top="96"
+     width="395"
+     background_visible="true"
+     bg_opaque_color="0.012 0.025 0.055 1"
+     background_opaque="true"
+     name="username_clean_area" />
 
-      <layout_panel
-       auto_resize="false"
-       user_resize="false"
-       layout="topleft"
-       name="ui_container"
-       background_visible="false"
-       height="130"
-       width="1000">
+    <combo_box
+     follows="left|top"
+     left="155"
+     top="94"
+     allow_text_entry="true"
+     layout="topleft"
+     height="52"
+     label="Username"
+     combo_editor.font="SansSerifMedium"
+     max_chars="128"
+     combo_editor.commit_on_focus_lost="false"
+     combo_editor.prevalidator="ascii"
+     tool_tip="The username you chose when you registered"
+     name="username_combo"
+     width="395">
 
-        <icon
-         height="80"
-         width="160"
-         image_name="login_sl_logo_horizontal"
-         layout="topleft"
-         follows="left|bottom"
-         left="10"
-         top="25"
-         name="sl_logo_small" />
+      <combo_box.combo_button
+       image_overlay="ComboButton_Transparent"
+       image_unselected="ComboButton_Transparent"
+       hover_glow_amount="0"
+       image_selected="ComboButton_Transparent"
+       image_disabled="ComboButton_Transparent" />
 
-        <icon
-         left="180"
-         top="30"
-         width="190"
-         height="32"
-         image_name="TextField_Active"
-         layout="topleft"
-         follows="left|bottom"
-         name="text_field_bg1" />
+      <combo_box.combo_editor
+       background_image="TextField_Transparent"
+       background_image_disabled="TextField_Transparent"
+       background_image_focused="TextField_Transparent"
+       draw_focus_border="false"
+       text_pad_left="8"
+       text_color="White"
+       bg_image_always_focused="true" />
+    </combo_box>
 
-        <combo_box
-         left="180"
-         top="30"
-         allow_text_entry="true"
-         follows="left|bottom"
-         layout="topleft"
-         height="32"
-         label="Username"
-         combo_editor.font="SansSerifMedium"
-         max_chars="128"
-         combo_editor.commit_on_focus_lost="false"
-         combo_editor.prevalidator="ascii"
-         tool_tip="The username you chose when you registered, like bobsmith12 or Steller Sunshine"
-         name="username_combo"
-         width="190">
+    <panel
+     follows="left|top"
+     height="48"
+     left="155"
+     top="183"
+     width="395"
+     background_visible="true"
+     bg_opaque_color="0.012 0.025 0.055 1"
+     background_opaque="true"
+     name="password_clean_area" />
 
-          <combo_box.combo_button
-           image_overlay="ComboButton_Arrow"
-           image_overlay_right_delta="10"
-           image_unselected="ComboButton_Transparent"
-           hover_glow_amount="0"
-           image_selected="ComboButton_Transparent"
-           image_disabled="ComboButton_Transparent" />
+    <line_editor
+     follows="left|top"
+     height="52"
+     left="155"
+     top="181"
+     max_length_chars="64"
+     text_pad_left="8"
+     name="password_edit"
+     label="Password"
+     bg_image="TextField_Transparent"
+     bg_image_disabled="TextField_Transparent"
+     bg_image_focused="TextField_Transparent"
+     bg_image_always_focused="true"
+     font="SansSerifMedium"
+     text_color="White"
+     is_password="true"
+     select_on_focus="true"
+     draw_focus_border="false"
+     commit_on_focus_lost="false"
+     width="395" />
 
-          <combo_box.combo_editor
-           background_image="TextField_Transparent"
-           background_image_disabled="TextField_Transparent"
-           background_image_focused="TextField_Transparent"
-           draw_focus_border="false"
-           text_pad_left="8"
-           bg_image_always_focused="true" />
-        </combo_box>
+    <panel
+     follows="left|top"
+     height="49"
+     left="150"
+     top="270"
+     width="355"
+     background_visible="true"
+     bg_opaque_color="0.012 0.025 0.055 1"
+     background_opaque="true"
+     name="location_clean_area" />
 
-        <check_box
-         follows="left|bottom"
-         font="SansSerifSmall"
-         label_text.text_color="White"
-         left="180"
-         top="68"
-         layout="topleft"
-         height="22"
-         label="Remember username"
-         word_wrap="down"
-         check_button.bottom="3"
-         name="remember_name"
-         tool_tip="Already remembered user can be forgotten from Me &gt; Preferences &gt; Advanced &gt; Remembered Usernames."
-         width="190">
+    <text
+     follows="left|top"
+     font="SansSerifMedium"
+     text_color="White"
+     height="28"
+     left="150"
+     name="location_text"
+     top="282"
+     width="105"
+     valign="center">
+      Log in to:
+    </text>
 
-          <check_box.label_text left="23" />
+    <combo_box
+     follows="left|top"
+     allow_text_entry="true"
+     control_name="NextLoginLocation"
+     label="Last Location"
+     height="48"
+     left="250"
+     max_chars="128"
+     combo_editor.font="SansSerifMedium"
+     top="270"
+     name="start_location_combo"
+     width="255"
+     combo_button.scale_image="true">
 
-          <check_box.check_button
-           image_selected="Checkbox_Slim_On"
-           image_unselected="Checkbox_Slim_Off"
-           image_pressed="Checkbox_Slim_Off"
-           image_pressed_selected="Checkbox_Slim_Off" />
-        </check_box>
+      <combo_box.combo_button
+       image_overlay="ComboButton_Transparent"
+       image_unselected="ComboButton_Transparent"
+       image_selected="ComboButton_Transparent"
+       image_disabled="ComboButton_Transparent"
+       hover_glow_amount="0" />
 
-        <line_editor
-         follows="left|bottom"
-         height="32"
-         left="385"
-         top="30"
-         max_length_chars="16"
-         text_pad_left="8"
-         name="password_edit"
-         label="Password"
-         bg_image_always_focused="true"
-         font="SansSerifMedium"
-         is_password="true"
-         select_on_focus="true"
-         draw_focus_border="false"
-         commit_on_focus_lost="false"
-         width="190" />
+      <combo_box.combo_editor
+       background_image="TextField_Transparent"
+       background_image_disabled="TextField_Transparent"
+       background_image_focused="TextField_Transparent"
+       draw_focus_border="false"
+       text_pad_left="3"
+       text_color="White"
+       bg_image_always_focused="true" />
 
-        <check_box
-         control_name="RememberPassword"
-         follows="left|bottom"
-         font="SansSerifSmall"
-         label_text.text_color="White"
-         height="22"
-         left="385"
-         top="68"
-         label="Remember password"
-         word_wrap="down"
-         check_button.bottom="3"
-         name="remember_password"
-         width="190">
+      <combo_box.item label="My last location" name="MyLastLocation" value="last" />
+      <combo_box.item label="My home" name="MyHome" value="home" />
+    </combo_box>
 
-          <check_box.label_text left="23" />
+    <!-- Hide legacy Remember Username, but retain it for login credential code. -->
+    <check_box
+     follows="left|top"
+     font="SansSerifSmall"
+     label_text.text_color="White"
+     left="-4000"
+     top="-4000"
+     layout="topleft"
+     height="22"
+     label="Remember username"
+     name="remember_name"
+     width="160"
+     visible="false">
+      <check_box.label_text left="23" />
+      <check_box.check_button
+       image_selected="Checkbox_Slim_On"
+       image_unselected="Checkbox_Slim_Off"
+       image_pressed="Checkbox_Slim_Off"
+       image_pressed_selected="Checkbox_Slim_Off" />
+    </check_box>
 
-          <check_box.check_button
-           image_selected="Checkbox_Slim_On"
-           image_unselected="Checkbox_Slim_Off"
-           image_pressed="Checkbox_Slim_Off"
-           image_pressed_selected="Checkbox_Slim_Off" />
-        </check_box>
+    <!-- Cover the baked Remember-me state and use the real checkbox. -->
+    <panel
+     follows="left|top"
+     height="45"
+     left="98"
+     top="350"
+     width="270"
+     background_visible="true"
+     bg_opaque_color="0.024 0.078 0.173 1"
+     background_opaque="true"
+     name="remember_clean_area" />
 
-        <text
-         follows="left|bottom"
-         font="SansSerifSmall"
-         text_color="White"
-         height="14"
-         left="590"
-         name="location_text"
-         top="10"
-         width="120"
-         valign="center">
-          Start here
-        </text>
+    <check_box
+     control_name="RememberPassword"
+     follows="left|top"
+     font="SansSerifMedium"
+     label_text.text_color="White"
+     height="34"
+     left="105"
+     top="357"
+     label="Remember me"
+     name="remember_password"
+     width="220">
+      <check_box.label_text left="45" />
+      <check_box.check_button
+       image_selected="Checkbox_Slim_On"
+       image_unselected="Checkbox_Slim_Off"
+       image_pressed="Checkbox_Slim_Off"
+       image_pressed_selected="Checkbox_Slim_Off" />
+    </check_box>
 
-        <icon
-         left="590"
-         top="30"
-         width="190"
-         height="32"
-         image_name="TextField_Active"
-         layout="topleft"
-         follows="left|bottom"
-         name="text_field_bg2" />
+    <!-- Transparent live buttons over the ornate button artwork. -->
+    <button
+     follows="left|top"
+     image_unselected="ComboButton_Transparent"
+     image_pressed="ComboButton_Transparent"
+     image_hover_unselected="ComboButton_Transparent"
+     label=""
+     name="connect_btn"
+     draw_focus_border="false"
+     hover_hand_cursor="true"
+     enabled="true"
+     width="490"
+     height="94"
+     left="65"
+     top="425"
+     pad_bottom="1" />
 
-        <combo_box
-         allow_text_entry="true"
-         control_name="NextLoginLocation"
-         follows="left|bottom"
-         label="My favorite places"
-         height="32"
-         left="590"
-         max_chars="128"
-         combo_editor.font="SansSerifMedium"
-         top="30"
-         name="start_location_combo"
-         width="190"
-         combo_button.scale_image="true">
-
-          <combo_box.combo_button
-           image_overlay="ComboButton_Arrow"
-           hover_glow_amount="0"
-           image_overlay_right_delta="10"
-           image_unselected="ComboButton_Transparent"
-           image_selected="ComboButton_Transparent"
-           image_disabled="ComboButton_Transparent" />
-
-          <combo_box.combo_editor
-           background_image="TextField_Transparent"
-           background_image_disabled="TextField_Transparent"
-           background_image_focused="TextField_Transparent"
-           draw_focus_border="false"
-           text_pad_left="8"
-           bg_image_always_focused="true" />
-
-          <combo_box.item
-           label="My last location"
-           name="MyLastLocation"
-           value="last" />
-
-          <combo_box.item
-           label="My home"
-           name="MyHome"
-           value="home" />
-        </combo_box>
-
-        <!-- Keep grid selector inside its own stack so the viewer can still collapse/relayout it safely -->
-        <layout_stack
-         follows="left|bottom"
-         layout="topleft"
-         orientation="horizontal"
-         name="login_stack"
-         border_size="0"
-         animate="false"
-         top="68"
-         left="590"
-         height="52"
-         width="190">
-
-          <layout_panel
-           auto_resize="false"
-           user_resize="false"
-           layout="topleft"
-           name="grid_panel"
-           background_visible="false"
-           height="52"
-           width="190">
-
-            <text
-             follows="left|top"
-             font="SansSerifSmall"
-             text_color="White"
-             height="12"
-             name="grid_text"
-             top="0"
-             left="0"
-             width="80"
-             valign="center">
-              Grid
-            </text>
-
-            <combo_box
-             allow_text_entry="false"
-             font="SansSerifTiny"
-             follows="left|top"
-             height="30"
-             top="16"
-             left="0"
-             max_chars="128"
-             label="Select grid"
-             layout="topleft"
-             name="server_combo"
-             width="190">
-
-              <combo_box.drop_down_button
-               pad_bottom="1"
-               pad_left="10"
-               font="SansSerifMedium"
-               label_color="Black"
-               label_color_selected="Black"
-               draw_focus_border="false"
-               image_overlay="ComboButton_Arrow"
-               image_overlay_right_delta="10"
-               image_unselected="TextField_Active"
-               image_selected="TextField_Active"
-               image_pressed="TextField_Active"
-               image_pressed_selected="TextField_Active" />
-            </combo_box>
-          </layout_panel>
-        </layout_stack>
-
-        <!-- Action buttons kept as direct children of ui_container -->
-        <panel
-         follows="left|bottom"
-         layout="topleft"
-         left="795"
-         top="15"
-         name="login_panel"
-         background_visible="false"
-         height="105"
-         width="195">
-
-          <button
-           follows="left|top"
-           image_unselected="PushButton_Login"
-           image_pressed="PushButton_Login_Pressed"
-           image_hover_unselected="PushButton_Login_Over"
-           label="Log in"
-           label_color="Black"
-           label_color_disabled="Black"
-           font="SansSerifMedium"
-           font.style="BOLD"
-           name="connect_btn"
-           draw_focus_border="false"
-           hover_hand_cursor="true"
-           enabled="true"
-           width="195"
-           height="36"
-           left="0"
-           top="5"
-           pad_bottom="1" />
-
-          <text
-           follows="left|top"
-           font="SansSerifSmall"
-           text_color="EmphasisColor"
-           height="16"
-           name="forgot_password_text"
-           left="0"
-           top="45"
-           width="195"
-           halign="center">
-            Need help logging in?
-          </text>
-
-          <button
-           follows="left|top"
-           image_unselected="PushButton_Sign"
-           image_pressed="PushButton_Sign_Pressed"
-           image_hover_unselected="PushButton_Sign_Over"
-           label="Create account"
-           label_color="White"
-           label_color_disabled="Black"
-           font="SansSerifMedium"
-           font.style="BOLD"
-           name="sign_btn"
-           draw_focus_border="false"
-           hover_hand_cursor="true"
-           width="195"
-           height="34"
-           left="0"
-           top="67"
-           pad_bottom="1" />
-        </panel>
-
-      </layout_panel>
-
-      <layout_panel
-       auto_resize="true"
-       user_resize="false"
-       layout="topleft"
-       name="rail_right_spacer"
-       background_visible="false"
-       min_width="0"
-       expanded_min_dim="0"
-       width="1" />
-    </layout_stack>
+    <button
+     follows="left|top"
+     image_unselected="ComboButton_Transparent"
+     image_pressed="ComboButton_Transparent"
+     image_hover_unselected="ComboButton_Transparent"
+     label=""
+     name="sign_btn"
+     draw_focus_border="false"
+     hover_hand_cursor="true"
+     width="475"
+     height="72"
+     left="73"
+     top="552"
+     pad_bottom="1" />
   </panel>
+
+  <!-- Footer callback. -->
+  <text
+   follows="right|bottom"
+   font="SansSerifSmall"
+   text_color="White"
+   height="18"
+   name="forgot_password_text"
+   right="-225"
+   bottom="18"
+   width="130"
+   halign="center">
+    Forgot Password?
+  </text>
+
+  <!-- Hidden compatibility stack expected by LLPanelLogin. -->
+  <layout_stack
+   follows="left|top"
+   layout="topleft"
+   orientation="horizontal"
+   name="login_stack"
+   border_size="0"
+   animate="false"
+   top="-4000"
+   left="-4000"
+   height="1"
+   width="1"
+   visible="false">
+
+    <layout_panel
+     auto_resize="false"
+     user_resize="false"
+     layout="topleft"
+     name="grid_panel"
+     background_visible="false"
+     height="1"
+     width="1">
+
+      <combo_box
+       allow_text_entry="false"
+       font="SansSerifTiny"
+       follows="left|top"
+       height="1"
+       top="0"
+       left="0"
+       max_chars="128"
+       label="Select grid"
+       layout="topleft"
+       name="server_combo"
+       width="1">
+        <combo_box.drop_down_button
+         image_overlay="ComboButton_Arrow"
+         image_unselected="TextField_Active"
+         image_selected="TextField_Active"
+         image_pressed="TextField_Active"
+         image_pressed_selected="TextField_Active" />
+      </combo_box>
+    </layout_panel>
+  </layout_stack>
+
+  <!-- Legacy logo object retained but hidden because its registered texture
+       slot is now used by the separate ornate login-card skin. -->
+  <icon
+   height="1"
+   width="1"
+   image_name="login_sl_logo_horizontal"
+   layout="topleft"
+   follows="left|bottom"
+   left="-4000"
+   top="-4000"
+   name="sl_logo_small"
+   visible="false" />
+
 </panel>

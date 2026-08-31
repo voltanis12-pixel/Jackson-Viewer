@@ -248,7 +248,7 @@ class ViewerManifest(LLManifest):
         global CHANNEL_VENDOR_BASE
         # a standard map of strings for replacing in the templates
         substitution_strings = {
-            'channel_vendor_base' : '_'.join(CHANNEL_VENDOR_BASE.split()),
+            'channel_vendor_base' : 'Nova',
             'channel_variant_underscores':self.channel_variant_app_suffix(),
             'version_underscores' : '_'.join(self.args['version']),
             'arch':self.args['arch']
@@ -259,7 +259,7 @@ class ViewerManifest(LLManifest):
         global CHANNEL_VENDOR_BASE
         # a standard map of strings for replacing in the templates
         substitution_strings = {
-            'channel_vendor_base' : '_'.join(CHANNEL_VENDOR_BASE.split()),
+            'channel_vendor_base' : 'Nova',
             'channel_variant_underscores':self.channel_variant_app_suffix(),
             'version_underscores' : '_'.join(self.args['version'])
             }
@@ -272,10 +272,10 @@ class ViewerManifest(LLManifest):
             app_suffix='Viewer'
         else:
             app_suffix=self.channel_variant()
-        return CHANNEL_VENDOR_BASE + ' ' + app_suffix
+        return 'Nova' + ' ' + app_suffix
 
     def exec_name(self):
-        return "SecondLifeViewer"
+        return "NovaViewer"
 
     def app_name_oneword(self):
         return ''.join(self.app_name().split())
@@ -900,7 +900,7 @@ class Windows_x86_64_Manifest(ViewerManifest):
         """ % substitution_strings
 
         if self.channel_type() == 'release':
-            substitution_strings['caption'] = CHANNEL_VENDOR_BASE
+            substitution_strings['caption'] = self.app_name()
         else:
             substitution_strings['caption'] = self.app_name() + ' ${VERSION}'
 

@@ -1,0 +1,55 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+html,body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #03070f;
+}
+video {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center center;
+    background: #03070f;
+    pointer-events: none;
+    user-select: none;
+}
+</style>
+</head>
+<body>
+<video id="novaVideo" autoplay muted loop playsinline preload="auto" disablepictureinpicture>
+    <source src="nova_login_background.mp4" type="video/mp4">
+</video>
+<script>
+(function () {
+    const video = document.getElementById('novaVideo');
+    video.muted = true;
+    video.volume = 0;
+    video.controls = false;
+
+    function startVideo() {
+        const promise = video.play();
+        if (promise && promise.catch) { promise.catch(function () {}); }
+    }
+
+    video.addEventListener('canplay', startVideo);
+    video.addEventListener('ended', function () {
+        video.currentTime = 0;
+        startVideo();
+    });
+    document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) { startVideo(); }
+    });
+    startVideo();
+})();
+</script>
+</body>
+</html>

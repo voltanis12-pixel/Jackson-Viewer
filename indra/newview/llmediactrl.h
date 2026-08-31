@@ -56,7 +56,8 @@ public:
                                 hide_loading,
                                 decouple_texture_size,
                                 trusted_content,
-                                focus_on_click;
+                                focus_on_click,
+                                cover_media;
 
         Optional<S32>           texture_width,
                                 texture_height;
@@ -214,6 +215,7 @@ public:
                 mTakeFocusOnClick,
                 mStretchToFill,
                 mMaintainAspectRatio,
+                mCoverMedia,
                 mHideLoading,
                 mClearCache,
                 mHoverTextChanged,

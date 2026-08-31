@@ -84,7 +84,8 @@ LLMediaCtrl::Params::Params()
     error_page_url("error_page_url"),
     media_id("media_id"),
     trusted_content("trusted_content", false),
-    focus_on_click("focus_on_click", true)
+    focus_on_click("focus_on_click", true),
+    cover_media("cover_media", false)
 {
 }
 
@@ -102,6 +103,7 @@ LLMediaCtrl::LLMediaCtrl( const Params& p) :
     mCurrentNavUrl( "" ),
     mStretchToFill( true ),
     mMaintainAspectRatio ( true ),
+    mCoverMedia( p.cover_media ),
     mDecoupleTextureSize ( false ),
     mUpdateScrolls( false ),
     mTextureWidth ( 1024 ),
@@ -937,7 +939,24 @@ void LLMediaCtrl::calcOffsetsAndSize(S32 *x_offset, S32 *y_offset, S32 *width, S
         {
             F32 media_aspect = (F32)(mMediaSource->getMediaPlugin()->getWidth()) / (F32)(mMediaSource->getMediaPlugin()->getHeight());
             F32 view_aspect = (F32)(r.getWidth()) / (F32)(r.getHeight());
-            if (media_aspect > view_aspect)
+
+            if (mCoverMedia)
+            {
+                // CSS-style "cover": preserve aspect ratio while filling the
+                // complete control. Any excess extends past the control edge
+                // and is clipped by the UI, eliminating pillar/letterboxing.
+                if (media_aspect > view_aspect)
+                {
+                    *height = r.getHeight();
+                    *width = llmax(ll_round(*height * media_aspect), r.getWidth());
+                }
+                else
+                {
+                    *width = r.getWidth();
+                    *height = llmax(ll_round(*width / media_aspect), r.getHeight());
+                }
+            }
+            else if (media_aspect > view_aspect)
             {
                 // max width, adjusted height
                 *width = r.getWidth();
