@@ -34,6 +34,8 @@ The upstream Second Life Viewer repository is maintained separately by Linden La
 
 For Jackson Viewer bugs, installation problems, or feature issues, use this repository's GitHub Issues section.
 
+See [SUPPORT.md](SUPPORT.md) for support information and [PRIVACY.md](PRIVACY.md) for the Jackson Viewer privacy policy.
+
 Do not contact Linden Lab for support with Jackson Viewer-specific modifications.
 
 ## RC2 Status
