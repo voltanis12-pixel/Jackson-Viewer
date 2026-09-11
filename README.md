@@ -14,7 +14,12 @@ The project combines the standard Second Life viewer foundation with a custom So
 - Source commit: `bcd2ebef34`
 - Release tag: `jackson-viewer-26.4.0.262540502-rc2`
 
-Download the current build from the repository Releases section.
+### Download
+
+- [Download Jackson Viewer RC2 for Windows 64-bit](https://github.com/voltanis12-pixel/Jackson-Viewer/releases/download/jackson-viewer-26.4.0.262540502-rc2/Jackson_Viewer_26_4_0_262540502_x86_64_Setup.exe)
+- [View the RC2 release page](https://github.com/voltanis12-pixel/Jackson-Viewer/releases/tag/jackson-viewer-26.4.0.262540502-rc2)
+- [Download corresponding RC2 source code](https://github.com/voltanis12-pixel/Jackson-Viewer/releases/download/jackson-viewer-26.4.0.262540502-rc2/Jackson-Viewer-26.4.0.262540502-RC2-Source.zip)
+- [View SHA-256 checksums](https://github.com/voltanis12-pixel/Jackson-Viewer/releases/download/jackson-viewer-26.4.0.262540502-rc2/SHA256SUMS.txt)
 
 ## Important Notice
 
