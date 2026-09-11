@@ -355,6 +355,38 @@ bool LLInventorySort::operator()(const LLFolderViewModelItemInventory* const& a,
         }
     }
 
+    if (mByCreator
+        && a->getSortGroup() == SG_ITEM
+        && b->getSortGroup() == SG_ITEM)
+    {
+        std::string creator_a = a->getSearchableCreatorName();
+        std::string creator_b = b->getSearchableCreatorName();
+
+        const bool unknown_a = creator_a.empty();
+        const bool unknown_b = creator_b.empty();
+
+        if (unknown_a != unknown_b)
+        {
+            return !unknown_a;
+        }
+
+        if (!unknown_a)
+        {
+            S32 creator_compare = LLStringUtil::compareDict(creator_a, creator_b);
+            if (creator_compare != 0)
+            {
+                return creator_compare < 0;
+            }
+        }
+
+        S32 item_compare = LLStringUtil::compareDict(a->getDisplayName(), b->getDisplayName());
+        if (item_compare != 0)
+        {
+            return item_compare < 0;
+        }
+
+        return a->getCreationDate() > b->getCreationDate();
+    }
     // We sort by name if we aren't sorting by date
     // OR if these are folders and we are sorting folders by name.
     bool by_name = ((!mByDate || (mFoldersByName && (a->getSortGroup() != SG_ITEM))) && !mFoldersByWeight);

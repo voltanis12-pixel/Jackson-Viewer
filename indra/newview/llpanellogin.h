@@ -147,7 +147,7 @@ private:
     LLPanel* mWebContainer;
     bool mWebPanelExpanded;
     LLMediaCtrl* mWebBrowser;
-    LLMediaCtrl* mVideoBrowser;
 };
 
 #endif
+

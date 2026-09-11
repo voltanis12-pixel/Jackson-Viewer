@@ -214,8 +214,7 @@ LLPanelLogin::LLPanelLogin(const LLRect &rect,
     mLoginBtn(nullptr),
     mWebContainer(nullptr),
     mWebPanelExpanded(false),
-    mWebBrowser(nullptr),
-    mVideoBrowser(nullptr)
+    mWebBrowser(nullptr)
 {
     setBackgroundVisible(false);
     setBackgroundOpaque(true);
@@ -331,17 +330,6 @@ LLPanelLogin::LLPanelLogin(const LLRect &rect,
     // Hidden destination browser retained for the viewer's existing login-page code.
     mWebBrowser = getChild<LLMediaCtrl>("login_html");
     mWebBrowser->addObserver(this);
-
-    // Nova Viewer cinematic login background. This is a separate media control
-    // so loadLoginPage() can continue managing login_html without ever replacing
-    // the local looping background video.
-    mVideoBrowser = getChild<LLMediaCtrl>("nova_video_html");
-    mVideoBrowser->setFrequentUpdates(true);
-    mVideoBrowser->setAlwaysRefresh(true);
-    // Let LLMediaCtrl own its normal reshape/texture-size lifecycle.
-    // The XUI control follows every edge of the login panel, and LLMediaCtrl::
-    // reshape() automatically resizes its Chromium texture to the live UI size.
-    mVideoBrowser->navigateToLocalPage("nova", "nova_login_video.html");
 
     // AAA login v9: keep the destination browser as a thin rail until
     // the user clicks it. The expanded panel overlays the background
@@ -1520,3 +1508,7 @@ void LLPanelLogin::draw()
         mForceRefresh = false;
     }
 }
+
+
+
+

@@ -91,6 +91,7 @@ public:
     bool isByDate() const { return mByDate; }
     bool isFoldersByName() const { return (!mByDate || mFoldersByName) && !mFoldersByWeight; }
     bool isFoldersByDate() const { return mByDate && !mFoldersByName && !mFoldersByWeight; }
+    bool isByCreator() const { return mByCreator; }
     U32 getSortOrder() const { return mSortOrder; }
     void toParams(Params& p) { p.order(mSortOrder);}
     void fromParams(Params& p)
@@ -100,6 +101,7 @@ public:
         mSystemToTop = (mSortOrder & LLInventoryFilter::SO_SYSTEM_FOLDERS_TO_TOP);
         mFoldersByName = (mSortOrder & LLInventoryFilter::SO_FOLDERS_BY_NAME);
         mFoldersByWeight = (mSortOrder & LLInventoryFilter::SO_FOLDERS_BY_WEIGHT);
+        mByCreator = (mSortOrder & LLInventoryFilter::SO_CREATOR);
     }
 
     bool operator()(const LLFolderViewModelItemInventory* const& a, const LLFolderViewModelItemInventory* const& b) const;
@@ -109,6 +111,7 @@ private:
     bool mSystemToTop;
     bool mFoldersByName;
     bool mFoldersByWeight;
+    bool mByCreator;
 };
 
 class LLFolderViewModelInventory

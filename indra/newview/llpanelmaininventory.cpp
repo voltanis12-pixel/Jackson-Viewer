@@ -69,6 +69,7 @@ const std::string ALL_ITEMS("All Items");
 const std::string RECENT_ITEMS("Recent Items");
 const std::string WORN_ITEMS("Worn Items");
 const std::string FAVORITES("Favorites");
+const std::string CREATOR_ITEMS("Creator Items");
 
 static LLPanelInjector<LLPanelMainInventory> t_inventory("panel_main_inventory");
 
@@ -226,6 +227,19 @@ bool LLPanelMainInventory::postBuild()
         mFavoritesPanel->setSelectCallback(boost::bind(&LLPanelMainInventory::onSelectionChange, this, mFavoritesPanel, _1, _2));
     }
 
+    mCreatorPanel = getChild<LLInventoryPanel>(CREATOR_ITEMS);
+    if (mCreatorPanel)
+    {
+        mCreatorPanel->setSortOrder(gSavedSettings.getU32(LLInventoryPanel::DEFAULT_SORT_ORDER) | LLInventoryFilter::SO_CREATOR | LLInventoryFilter::SO_FOLDERS_BY_NAME);
+
+        LLInventoryFilter& creator_filter = mCreatorPanel->getFilter();
+        creator_filter.setSearchType(LLInventoryFilter::SEARCHTYPE_CREATOR);
+        creator_filter.setShowFolderState(LLInventoryFilter::SHOW_NON_EMPTY_FOLDERS);
+        creator_filter.markDefault();
+
+        mCreatorPanel->setSelectCallback(
+            boost::bind(&LLPanelMainInventory::onSelectionChange, this, mCreatorPanel, _1, _2));
+    }
     mSearchTypeCombo  = getChild<LLComboBox>("search_type");
     if(mSearchTypeCombo)
     {

@@ -1,29 +1,7 @@
-<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+﻿<?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <!-- All our XML is utf-8 encoded. -->
-<panel
-  name="instant_message"
-  width="300"
-  height="180"
-  follows="all">
-     <avatar_icon
-        follows="left|top"
-        height="18"
-        image_name="Generic_Person"
-        layout="topleft"
-        left="3"
-        mouse_opaque="true"
-        name="avatar_icon"
-        top="3"
-        width="18" />
-	<text_chat
-      top="3"
-      left="30"
-      right="-10"
-      height="120"
-      text_color="white"
-      word_wrap="true"
-      mouse_opaque="true"
-      valign="top"
-      name="msg_text">
-	</text_chat>
+<panel name="instant_message" width="300" height="180" follows="all">
+  <avatar_icon follows="left|top" height="18" image_name="Generic_Person" layout="topleft" left="3" mouse_opaque="true" name="avatar_icon" top="3" width="18" />
+  <text_chat top="3" left="30" right="-10" height="120" text_color="0.88 0.80 0.68 1" word_wrap="true" mouse_opaque="true" valign="top" name="msg_text" bg_visible="false" bg_readonly_color="0.055 0.043 0.034 1" bg_writeable_color="0.055 0.043 0.034 1">
+  </text_chat>
 </panel>

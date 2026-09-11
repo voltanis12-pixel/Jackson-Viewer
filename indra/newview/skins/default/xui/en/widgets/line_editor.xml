@@ -6,7 +6,7 @@
              select_on_focus="false"
              commit_on_focus_lost="true"
              ignore_tab="true"
-             cursor_color="White"
+             cursor_color=0.88 0.58 0.28 1"
              bg_color="White"
              text_color="White"
              text_pad_left="2"

@@ -28,6 +28,7 @@
 #include "lltooltip.h"
 
 #include "llmediactrl.h"
+#include "lluri.h"
 
 // viewer includes
 #include "llfloaterworldmap.h"
@@ -140,7 +141,6 @@ LLMediaCtrl::LLMediaCtrl( const Params& p) :
 
     mMediaTextureID = getKey();
 
-    // We don't need to create the media source up front anymore unless we have a non-empty home URL to navigate to.
     if(!mHomePageUrl.empty())
     {
         navigateHome();
@@ -203,7 +203,6 @@ bool LLMediaCtrl::handleHover( S32 x, S32 y, MASK mask )
         gViewerWindow->setCursor(mMediaSource->getLastSetCursor());
     }
 
-    // TODO: Is this the right way to handle hover text changes driven by the plugin?
     if(mHoverTextChanged)
     {
         mHoverTextChanged = false;
@@ -242,7 +241,7 @@ bool LLMediaCtrl::handleScrollHWheel(S32 x, S32 y, S32 clicks)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-//  virtual
+//
 bool LLMediaCtrl::handleToolTip(S32 x, S32 y, MASK mask)
 {
     std::string hover_text;
@@ -318,8 +317,6 @@ bool LLMediaCtrl::handleRightMouseUp( S32 x, S32 y, MASK mask )
     {
         mMediaSource->mouseUp(x, y, mask, 1);
 
-        // *HACK: LLMediaImplLLMozLib automatically takes focus on mouseup,
-        // in addition to the onFocusReceived() call below.  Undo this. JC
         if (!mTakeFocusOnClick)
         {
             mMediaSource->focus(false);
@@ -358,12 +355,17 @@ bool LLMediaCtrl::handleRightMouseDown( S32 x, S32 y, MASK mask )
         registar.add("Open.WebInspector", boost::bind(&LLMediaCtrl::onOpenWebInspector, this));
         registar.add("Open.ShowSource", boost::bind(&LLMediaCtrl::onShowSource, this));
 
-        // stinson 05/05/2014 : use this as the parent of the context menu if the static menu
-        // container has yet to be created
-        LLPanel* menuParent = (LLMenuGL::sMenuContainer != NULL) ? dynamic_cast<LLPanel*>(LLMenuGL::sMenuContainer) : dynamic_cast<LLPanel*>(this);
+        LLPanel* menuParent = (LLMenuGL::sMenuContainer != NULL)
+            ? dynamic_cast<LLPanel*>(LLMenuGL::sMenuContainer)
+            : dynamic_cast<LLPanel*>(this);
+
         llassert(menuParent != NULL);
+
         menu = LLUICtrlFactory::getInstance()->createFromFile<LLContextMenu>(
-            "menu_media_ctrl.xml", menuParent, LLViewerMenuHolderGL::child_registry_t::instance());
+            "menu_media_ctrl.xml",
+            menuParent,
+            LLViewerMenuHolderGL::child_registry_t::instance());
+
         if (menu)
         {
             mContextMenuHandle = menu->getHandle();
@@ -372,10 +374,10 @@ bool LLMediaCtrl::handleRightMouseDown( S32 x, S32 y, MASK mask )
 
     if (menu)
     {
-        // hide/show debugging options
         bool media_plugin_debugging_enabled = gSavedSettings.getBOOL("MediaPluginDebugging");
+
         menu->setItemVisible("debug_separator", media_plugin_debugging_enabled);
-        menu->setItemVisible("open_webinspector", media_plugin_debugging_enabled );
+        menu->setItemVisible("open_webinspector", media_plugin_debugging_enabled);
         menu->setItemVisible("show_page_source", media_plugin_debugging_enabled);
 
         menu->show(x, y);
@@ -412,8 +414,6 @@ void LLMediaCtrl::onFocusReceived()
     if (mMediaSource)
     {
         mMediaSource->focus(true);
-
-        // Set focus for edit menu items
         LLEditMenuHandler::gEditMenuHandler = mMediaSource;
     }
 
@@ -430,7 +430,6 @@ void LLMediaCtrl::onFocusLost()
 
         if( LLEditMenuHandler::gEditMenuHandler == mMediaSource )
         {
-            // Clear focus for edit menu items
             LLEditMenuHandler::gEditMenuHandler = NULL;
         }
     }
@@ -499,7 +498,10 @@ bool LLMediaCtrl::handleKeyUpHere(KEY key, MASK mask)
 //
 void LLMediaCtrl::onVisibilityChange ( bool new_visibility )
 {
-    LL_INFOS() << "visibility changed to " << (new_visibility?"true":"false") << LL_ENDL;
+    LL_INFOS() << "visibility changed to "
+               << (new_visibility ? "true" : "false")
+               << LL_ENDL;
+
     if(mMediaSource)
     {
         mMediaSource->setVisible( new_visibility );
@@ -527,7 +529,6 @@ bool LLMediaCtrl::handleUnicodeCharHere(llwchar uni_char)
 //
 void LLMediaCtrl::onVisibilityChanged ( const LLSD& new_visibility )
 {
-    // set state of frequent updates automatically if visibility changes
     if ( new_visibility.asBoolean() )
     {
         mFrequentUpdates = true;
@@ -547,7 +548,6 @@ void LLMediaCtrl::reshape( S32 width, S32 height, bool called_from_parent )
         S32 screen_width = ll_round((F32)width * LLUI::getScaleFactor().mV[VX]);
         S32 screen_height = ll_round((F32)height * LLUI::getScaleFactor().mV[VY]);
 
-        // when floater is minimized, these sizes are negative
         if ( screen_height > 0 && screen_width > 0 )
         {
             setTextureSize(screen_width, screen_height);
@@ -619,21 +619,22 @@ void LLMediaCtrl::clearCache()
     {
         mClearCache = true;
     }
-
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 //
 void LLMediaCtrl::navigateTo( std::string url_in, std::string mime_type, bool clean_browser)
 {
-    // don't browse to anything that starts with secondlife:// or sl://
     const std::string protocol1 = "secondlife://";
     const std::string protocol2 = "sl://";
-    if ((LLStringUtil::compareInsensitive(url_in.substr(0, protocol1.length()), protocol1) == 0) ||
-        (LLStringUtil::compareInsensitive(url_in.substr(0, protocol2.length()), protocol2) == 0))
+
+    if ((LLStringUtil::compareInsensitive(
+            url_in.substr(0, protocol1.length()),
+            protocol1) == 0) ||
+        (LLStringUtil::compareInsensitive(
+            url_in.substr(0, protocol2.length()),
+            protocol2) == 0))
     {
-        // TODO: Print out/log this attempt?
-        // LL_INFOS() << "Rejecting attempt to load restricted website :" << urlIn << LL_ENDL;
         return;
     }
 
@@ -641,27 +642,83 @@ void LLMediaCtrl::navigateTo( std::string url_in, std::string mime_type, bool cl
     {
         mCurrentNavUrl = url_in;
         mMediaSource->setSize(mTextureWidth, mTextureHeight);
-        mMediaSource->navigateTo(url_in, mime_type, mime_type.empty(), false, clean_browser);
+
+        mMediaSource->navigateTo(
+            url_in,
+            mime_type,
+            mime_type.empty(),
+            false,
+            clean_browser);
     }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-void LLMediaCtrl::navigateToLocalPage( const std::string& subdir, const std::string& filename_in )
+void LLMediaCtrl::navigateToLocalPage(
+    const std::string& subdir,
+    const std::string& filename_in)
 {
-    std::string filename(gDirUtilp->add(subdir, filename_in));
-    std::string expanded_filename = gDirUtilp->findSkinnedFilename("html", filename);
+    std::string filename(
+        gDirUtilp->add(subdir, filename_in));
+
+    std::string expanded_filename =
+        gDirUtilp->findSkinnedFilename(
+            "html",
+            filename);
 
     if (expanded_filename.empty())
     {
-        LL_WARNS() << "File " << filename << "not found" << LL_ENDL;
+        LL_WARNS()
+            << "File "
+            << filename
+            << " not found"
+            << LL_ENDL;
+
         return;
     }
+
+    // Chromium expects a proper file URI rather than a raw
+    // Windows filesystem path.
+    LLStringUtil::replaceChar(
+        expanded_filename,
+        '\\',
+        '/');
+
+    std::string local_url = "file://";
+
+#if LL_WINDOWS
+    // C:/foo becomes file:///C:/foo
+    local_url += "/";
+#endif
+
+    local_url += expanded_filename;
+
+    // Escapes spaces such as:
+    // Program Files -> Program%20Files
+    local_url =
+        LLURI::escapePathAndData(local_url);
+
     if (ensureMediaSourceExists())
     {
-        mCurrentNavUrl = expanded_filename;
-        mMediaSource->setSize(mTextureWidth, mTextureHeight);
-        mMediaSource->navigateTo(expanded_filename, HTTP_CONTENT_TEXT_HTML, false);
+        mCurrentNavUrl = local_url;
+
+        mMediaSource->setSize(
+            mTextureWidth,
+            mTextureHeight);
+
+        // BrowserFileAccessFromFileUrls is already enabled
+        // by default in settings.xml.
+        //
+        // Do NOT use clean_browser=true here. It forces a
+        // separate CEF creation path. The Nova background
+        // previously rendered correctly through the normal
+        // browser path.
+        mMediaSource->navigateTo(
+            local_url,
+            HTTP_CONTENT_TEXT_HTML,
+            false,
+            false,
+            false);
     }
 }
 
@@ -678,52 +735,68 @@ void LLMediaCtrl::navigateHome()
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-void LLMediaCtrl::setHomePageUrl( const std::string& urlIn, const std::string& mime_type )
+void LLMediaCtrl::setHomePageUrl(
+    const std::string& urlIn,
+    const std::string& mime_type )
 {
     mHomePageUrl = urlIn;
+
     if (mMediaSource)
     {
-        mMediaSource->setHomeURL(mHomePageUrl, mime_type);
+        mMediaSource->setHomeURL(
+            mHomePageUrl,
+            mime_type);
     }
 }
 
-void LLMediaCtrl::setTarget(const std::string& target)
+void LLMediaCtrl::setTarget(
+    const std::string& target)
 {
     mTarget = target;
+
     if (mMediaSource)
     {
         mMediaSource->setTarget(mTarget);
     }
 }
 
-void LLMediaCtrl::setErrorPageURL(const std::string& url)
+void LLMediaCtrl::setErrorPageURL(
+    const std::string& url)
 {
     mErrorPageURL = url;
 }
 
-const std::string& LLMediaCtrl::getErrorPageURL()
+const std::string&
+LLMediaCtrl::getErrorPageURL()
 {
     return mErrorPageURL;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-bool LLMediaCtrl::setCaretColor(unsigned int red, unsigned int green, unsigned int blue)
+bool LLMediaCtrl::setCaretColor(
+    unsigned int red,
+    unsigned int green,
+    unsigned int blue)
 {
-    //NOOP
     return false;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-void LLMediaCtrl::setTextureSize(S32 width, S32 height)
+void LLMediaCtrl::setTextureSize(
+    S32 width,
+    S32 height)
 {
     mTextureWidth = width;
     mTextureHeight = height;
 
     if(mMediaSource)
     {
-        mMediaSource->setSize(mTextureWidth, mTextureHeight);
+        mMediaSource->setSize(
+            mTextureWidth,
+            mTextureHeight);
+
         mForceUpdate = true;
     }
 }
@@ -732,7 +805,7 @@ void LLMediaCtrl::setTextureSize(S32 width, S32 height)
 //
 std::string LLMediaCtrl::getHomePageUrl()
 {
-    return  mHomePageUrl;
+    return mHomePageUrl;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -741,22 +814,41 @@ bool LLMediaCtrl::ensureMediaSourceExists()
 {
     if(mMediaSource.isNull())
     {
-        // If we don't already have a media source, try to create one.
-        mMediaSource = LLViewerMedia::getInstance()->newMediaImpl(mMediaTextureID, mTextureWidth, mTextureHeight);
+        mMediaSource =
+            LLViewerMedia::getInstance()->newMediaImpl(
+                mMediaTextureID,
+                mTextureWidth,
+                mTextureHeight);
+
         if ( mMediaSource )
         {
             mMediaSource->setUsedInUI(true);
-            mMediaSource->setHomeURL(mHomePageUrl, mHomePageMimeType);
+
+            mMediaSource->setHomeURL(
+                mHomePageUrl,
+                mHomePageMimeType);
+
             mMediaSource->setTarget(mTarget);
-            mMediaSource->setVisible( isInVisibleChain() );
-            mMediaSource->addObserver( this );
-            mMediaSource->setBackgroundColor( getBackgroundColor() );
+
+            mMediaSource->setVisible(
+                isInVisibleChain());
+
+            mMediaSource->addObserver(this);
+
+            mMediaSource->setBackgroundColor(
+                getBackgroundColor());
+
             mMediaSource->setTrustedBrowser(mTrusted);
 
-            F32 scale_factor = LLUI::getScaleFactor().mV[ VX ];
-            if (scale_factor != mMediaSource->getPageZoomFactor())
+            F32 scale_factor =
+                LLUI::getScaleFactor().mV[VX];
+
+            if (scale_factor !=
+                mMediaSource->getPageZoomFactor())
             {
-                mMediaSource->setPageZoomFactor( scale_factor );
+                mMediaSource->setPageZoomFactor(
+                    scale_factor);
+
                 mUpdateScrolls = true;
             }
 
@@ -768,8 +860,9 @@ bool LLMediaCtrl::ensureMediaSourceExists()
         }
         else
         {
-            LL_WARNS() << "media source create failed " << LL_ENDL;
-            // return;
+            LL_WARNS()
+                << "media source create failed "
+                << LL_ENDL;
         }
     }
 
@@ -785,9 +878,12 @@ void LLMediaCtrl::unloadMediaSource()
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-LLPluginClassMedia* LLMediaCtrl::getMediaPlugin()
+LLPluginClassMedia*
+LLMediaCtrl::getMediaPlugin()
 {
-    return mMediaSource.isNull() ? NULL : mMediaSource->getMediaPlugin();
+    return mMediaSource.isNull()
+        ? NULL
+        : mMediaSource->getMediaPlugin();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -799,21 +895,26 @@ void LLMediaCtrl::draw()
     if ( gRestoreGL == 1 || mUpdateScrolls)
     {
         LLRect r = getRect();
-        reshape( r.getWidth(), r.getHeight(), false );
+
+        reshape(
+            r.getWidth(),
+            r.getHeight(),
+            false);
+
         mUpdateScrolls = false;
         return;
     }
 
-    // NOTE: optimization needed here - probably only need to do this once
-    // unless tearoffs change the parent which they probably do.
-    const LLUICtrl* ptr = findRootMostFocusRoot();
+    const LLUICtrl* ptr =
+        findRootMostFocusRoot();
+
     if ( ptr && ptr->hasFocus() )
     {
-        setFrequentUpdates( true );
+        setFrequentUpdates(true);
     }
     else
     {
-        setFrequentUpdates( false );
+        setFrequentUpdates(false);
     };
 
     bool draw_media = false;
@@ -821,13 +922,20 @@ void LLMediaCtrl::draw()
     LLPluginClassMedia* media_plugin = NULL;
     LLViewerMediaTexture* media_texture = NULL;
 
-    if(mMediaSource && mMediaSource->hasMedia())
+    if(mMediaSource &&
+       mMediaSource->hasMedia())
     {
-        media_plugin = mMediaSource->getMediaPlugin();
+        media_plugin =
+            mMediaSource->getMediaPlugin();
 
-        if(media_plugin && (media_plugin->textureValid()))
+        if(media_plugin &&
+           media_plugin->textureValid())
         {
-            media_texture = LLViewerTextureManager::findMediaTexture(mMediaTextureID);
+            media_texture =
+                LLViewerTextureManager::
+                    findMediaTexture(
+                        mMediaTextureID);
+
             if(media_texture)
             {
                 draw_media = true;
@@ -835,358 +943,658 @@ void LLMediaCtrl::draw()
         }
     }
 
-    bool background_visible = isBackgroundVisible();
-    bool background_opaque = isBackgroundOpaque();
+    bool background_visible =
+        isBackgroundVisible();
+
+    bool background_opaque =
+        isBackgroundOpaque();
 
     if(draw_media)
     {
         gGL.pushUIMatrix();
+
         {
-            F32 scale_factor = LLUI::getScaleFactor().mV[ VX ];
-            if (scale_factor != mMediaSource->getPageZoomFactor())
+            F32 scale_factor =
+                LLUI::getScaleFactor().mV[VX];
+
+            if (scale_factor !=
+                mMediaSource->
+                    getPageZoomFactor())
             {
-                mMediaSource->setPageZoomFactor( scale_factor );
+                mMediaSource->
+                    setPageZoomFactor(
+                        scale_factor);
+
                 mUpdateScrolls = true;
             }
 
-            // scale texture to fit the space using texture coords
-            gGL.getTexUnit(0)->bind(media_texture);
-            LLColor4 media_color = LLColor4::white % alpha;
-            gGL.color4fv( media_color.mV );
-            F32 max_u = ( F32 )media_plugin->getWidth() / ( F32 )media_plugin->getTextureWidth();
-            F32 max_v = ( F32 )media_plugin->getHeight() / ( F32 )media_plugin->getTextureHeight();
+            gGL.getTexUnit(0)->
+                bind(media_texture);
 
-            S32 x_offset, y_offset, width, height;
-            calcOffsetsAndSize(&x_offset, &y_offset, &width, &height);
+            LLColor4 media_color =
+                LLColor4::white % alpha;
 
-            // draw the browser
-            gGL.begin(LLRender::TRIANGLES);
-            if (! media_plugin->getTextureCoordsOpenGL())
+            gGL.color4fv(
+                media_color.mV);
+
+            F32 max_u =
+                (F32)media_plugin->getWidth() /
+                (F32)media_plugin->
+                    getTextureWidth();
+
+            F32 max_v =
+                (F32)media_plugin->getHeight() /
+                (F32)media_plugin->
+                    getTextureHeight();
+
+            S32 x_offset;
+            S32 y_offset;
+            S32 width;
+            S32 height;
+
+            calcOffsetsAndSize(
+                &x_offset,
+                &y_offset,
+                &width,
+                &height);
+
+            gGL.begin(
+                LLRender::TRIANGLES);
+
+            if (!media_plugin->
+                    getTextureCoordsOpenGL())
             {
-                // render using web browser reported width and height, instead of trying to invert GL scale
-                gGL.texCoord2f( max_u, 0.f );
-                gGL.vertex2i( x_offset + width, y_offset + height );
+                gGL.texCoord2f(
+                    max_u,
+                    0.f);
 
-                gGL.texCoord2f( 0.f, 0.f );
-                gGL.vertex2i( x_offset, y_offset + height );
+                gGL.vertex2i(
+                    x_offset + width,
+                    y_offset + height);
 
-                gGL.texCoord2f( 0.f, max_v );
-                gGL.vertex2i( x_offset, y_offset );
+                gGL.texCoord2f(
+                    0.f,
+                    0.f);
 
-                gGL.texCoord2f(max_u, 0.f);
-                gGL.vertex2i(x_offset + width, y_offset + height);
+                gGL.vertex2i(
+                    x_offset,
+                    y_offset + height);
 
-                gGL.texCoord2f(0.f, max_v);
-                gGL.vertex2i(x_offset, y_offset);
+                gGL.texCoord2f(
+                    0.f,
+                    max_v);
 
-                gGL.texCoord2f( max_u, max_v );
-                gGL.vertex2i( x_offset + width, y_offset );
+                gGL.vertex2i(
+                    x_offset,
+                    y_offset);
+
+                gGL.texCoord2f(
+                    max_u,
+                    0.f);
+
+                gGL.vertex2i(
+                    x_offset + width,
+                    y_offset + height);
+
+                gGL.texCoord2f(
+                    0.f,
+                    max_v);
+
+                gGL.vertex2i(
+                    x_offset,
+                    y_offset);
+
+                gGL.texCoord2f(
+                    max_u,
+                    max_v);
+
+                gGL.vertex2i(
+                    x_offset + width,
+                    y_offset);
             }
             else
             {
-                // render using web browser reported width and height, instead of trying to invert GL scale
-                gGL.texCoord2f( max_u, max_v );
-                gGL.vertex2i( x_offset + width, y_offset + height );
+                gGL.texCoord2f(
+                    max_u,
+                    max_v);
 
-                gGL.texCoord2f( 0.f, max_v );
-                gGL.vertex2i( x_offset, y_offset + height );
+                gGL.vertex2i(
+                    x_offset + width,
+                    y_offset + height);
 
-                gGL.texCoord2f( 0.f, 0.f );
-                gGL.vertex2i( x_offset, y_offset );
+                gGL.texCoord2f(
+                    0.f,
+                    max_v);
 
-                gGL.texCoord2f(max_u, max_v);
-                gGL.vertex2i(x_offset + width, y_offset + height);
+                gGL.vertex2i(
+                    x_offset,
+                    y_offset + height);
 
-                gGL.texCoord2f(0.f, 0.f);
-                gGL.vertex2i(x_offset, y_offset);
+                gGL.texCoord2f(
+                    0.f,
+                    0.f);
 
-                gGL.texCoord2f( max_u, 0.f );
-                gGL.vertex2i( x_offset + width, y_offset );
+                gGL.vertex2i(
+                    x_offset,
+                    y_offset);
+
+                gGL.texCoord2f(
+                    max_u,
+                    max_v);
+
+                gGL.vertex2i(
+                    x_offset + width,
+                    y_offset + height);
+
+                gGL.texCoord2f(
+                    0.f,
+                    0.f);
+
+                gGL.vertex2i(
+                    x_offset,
+                    y_offset);
+
+                gGL.texCoord2f(
+                    max_u,
+                    0.f);
+
+                gGL.vertex2i(
+                    x_offset + width,
+                    y_offset);
             }
+
             gGL.end();
         }
-        gGL.popUIMatrix();
 
+        gGL.popUIMatrix();
     }
     else
     {
-        // Setting these will make LLPanel::draw draw the opaque background color.
         setBackgroundVisible(true);
         setBackgroundOpaque(true);
     }
 
-    // highlight if keyboard focus here. (TODO: this needs some work)
-    if ( mBorder && mBorder->getVisible() )
-        mBorder->setKeyboardFocusHighlight( gFocusMgr.childHasKeyboardFocus( this ) );
+    if ( mBorder &&
+         mBorder->getVisible() )
+    {
+        mBorder->
+            setKeyboardFocusHighlight(
+                gFocusMgr.
+                    childHasKeyboardFocus(
+                        this));
+    }
 
     LLPanel::draw();
 
-    // Restore the previous values
-    setBackgroundVisible(background_visible);
-    setBackgroundOpaque(background_opaque);
+    setBackgroundVisible(
+        background_visible);
+
+    setBackgroundOpaque(
+        background_opaque);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-void LLMediaCtrl::calcOffsetsAndSize(S32 *x_offset, S32 *y_offset, S32 *width, S32 *height)
+void LLMediaCtrl::calcOffsetsAndSize(
+    S32 *x_offset,
+    S32 *y_offset,
+    S32 *width,
+    S32 *height)
 {
     const LLRect &r = getRect();
-    *x_offset = *y_offset = 0;
+
+    *x_offset = 0;
+    *y_offset = 0;
 
     if (mStretchToFill)
     {
-        if (mMaintainAspectRatio && mMediaSource && mMediaSource->getMediaPlugin())
+        if (mMaintainAspectRatio &&
+            mMediaSource &&
+            mMediaSource->getMediaPlugin())
         {
-            F32 media_aspect = (F32)(mMediaSource->getMediaPlugin()->getWidth()) / (F32)(mMediaSource->getMediaPlugin()->getHeight());
-            F32 view_aspect = (F32)(r.getWidth()) / (F32)(r.getHeight());
+            F32 media_aspect =
+                (F32)mMediaSource->
+                    getMediaPlugin()->
+                    getWidth() /
+                (F32)mMediaSource->
+                    getMediaPlugin()->
+                    getHeight();
+
+            F32 view_aspect =
+                (F32)r.getWidth() /
+                (F32)r.getHeight();
 
             if (mCoverMedia)
             {
-                // CSS-style "cover": preserve aspect ratio while filling the
-                // complete control. Any excess extends past the control edge
-                // and is clipped by the UI, eliminating pillar/letterboxing.
-                if (media_aspect > view_aspect)
+                if (media_aspect >
+                    view_aspect)
                 {
-                    *height = r.getHeight();
-                    *width = llmax(ll_round(*height * media_aspect), r.getWidth());
+                    *height =
+                        r.getHeight();
+
+                    *width =
+                        llmax(
+                            ll_round(
+                                *height *
+                                media_aspect),
+                            r.getWidth());
                 }
                 else
                 {
-                    *width = r.getWidth();
-                    *height = llmax(ll_round(*width / media_aspect), r.getHeight());
+                    *width =
+                        r.getWidth();
+
+                    *height =
+                        llmax(
+                            ll_round(
+                                *width /
+                                media_aspect),
+                            r.getHeight());
                 }
             }
-            else if (media_aspect > view_aspect)
+            else if (media_aspect >
+                     view_aspect)
             {
-                // max width, adjusted height
-                *width = r.getWidth();
-                *height = llmin(llmax(ll_round(*width / media_aspect), 0), r.getHeight());
+                *width =
+                    r.getWidth();
+
+                *height =
+                    llmin(
+                        llmax(
+                            ll_round(
+                                *width /
+                                media_aspect),
+                            0),
+                        r.getHeight());
             }
             else
             {
-                // max height, adjusted width
-                *height = r.getHeight();
-                *width = llmin(llmax(ll_round(*height * media_aspect), 0), r.getWidth());
+                *height =
+                    r.getHeight();
+
+                *width =
+                    llmin(
+                        llmax(
+                            ll_round(
+                                *height *
+                                media_aspect),
+                            0),
+                        r.getWidth());
             }
         }
         else
         {
-            *width = r.getWidth();
-            *height = r.getHeight();
+            *width =
+                r.getWidth();
+
+            *height =
+                r.getHeight();
         }
     }
     else
     {
-        *width = llmin(mMediaSource->getMediaPlugin()->getWidth(), r.getWidth());
-        *height = llmin(mMediaSource->getMediaPlugin()->getHeight(), r.getHeight());
+        *width =
+            llmin(
+                mMediaSource->
+                    getMediaPlugin()->
+                    getWidth(),
+                r.getWidth());
+
+        *height =
+            llmin(
+                mMediaSource->
+                    getMediaPlugin()->
+                    getHeight(),
+                r.getHeight());
     }
 
-    *x_offset = (r.getWidth() - *width) / 2;
-    *y_offset = (r.getHeight() - *height) / 2;
+    *x_offset =
+        (r.getWidth() - *width) / 2;
+
+    *y_offset =
+        (r.getHeight() - *height) / 2;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-void LLMediaCtrl::convertInputCoords(S32& x, S32& y)
+void LLMediaCtrl::convertInputCoords(
+    S32& x,
+    S32& y)
 {
-    S32 x_offset, y_offset, width, height;
-    calcOffsetsAndSize(&x_offset, &y_offset, &width, &height);
+    S32 x_offset;
+    S32 y_offset;
+    S32 width;
+    S32 height;
+
+    calcOffsetsAndSize(
+        &x_offset,
+        &y_offset,
+        &width,
+        &height);
 
     x -= x_offset;
     y -= y_offset;
 
     bool coords_opengl = false;
 
-    if(mMediaSource && mMediaSource->hasMedia())
+    if(mMediaSource &&
+       mMediaSource->hasMedia())
     {
-        coords_opengl = mMediaSource->getMediaPlugin()->getTextureCoordsOpenGL();
+        coords_opengl =
+            mMediaSource->
+                getMediaPlugin()->
+                getTextureCoordsOpenGL();
     }
 
-    x = ll_round((F32)x * LLUI::getScaleFactor().mV[VX]);
-    if ( ! coords_opengl )
+    x = ll_round(
+        (F32)x *
+        LLUI::getScaleFactor().mV[VX]);
+
+    if (!coords_opengl)
     {
-        y = ll_round((F32)(y) * LLUI::getScaleFactor().mV[VY]);
+        y = ll_round(
+            (F32)y *
+            LLUI::getScaleFactor().mV[VY]);
     }
     else
     {
-        y = ll_round((F32)(getRect().getHeight() - y) * LLUI::getScaleFactor().mV[VY]);
+        y = ll_round(
+            (F32)(getRect().
+                getHeight() - y) *
+            LLUI::getScaleFactor().mV[VY]);
     };
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // inherited from LLViewerMediaObserver
 //virtual
-void LLMediaCtrl::handleMediaEvent(LLPluginClassMedia* self, EMediaEvent event)
+void LLMediaCtrl::handleMediaEvent(
+    LLPluginClassMedia* self,
+    EMediaEvent event)
 {
     switch(event)
     {
         case MEDIA_EVENT_CONTENT_UPDATED:
         {
-            // LL_DEBUGS("Media") <<  "Media event:  MEDIA_EVENT_CONTENT_UPDATED " << LL_ENDL;
         };
         break;
 
         case MEDIA_EVENT_TIME_DURATION_UPDATED:
         {
-            // LL_DEBUGS("Media") <<  "Media event:  MEDIA_EVENT_TIME_DURATION_UPDATED, time is " << self->getCurrentTime() << " of " << self->getDuration() << LL_ENDL;
         };
         break;
 
         case MEDIA_EVENT_SIZE_CHANGED:
         {
-            LL_DEBUGS("Media") <<  "Media event:  MEDIA_EVENT_SIZE_CHANGED " << LL_ENDL;
+            LL_DEBUGS("Media")
+                << "Media event: "
+                << "MEDIA_EVENT_SIZE_CHANGED "
+                << LL_ENDL;
+
             LLRect r = getRect();
-            reshape( r.getWidth(), r.getHeight(), false );
+
+            reshape(
+                r.getWidth(),
+                r.getHeight(),
+                false);
         };
         break;
 
         case MEDIA_EVENT_CURSOR_CHANGED:
         {
-            LL_DEBUGS("Media") <<  "Media event:  MEDIA_EVENT_CURSOR_CHANGED, new cursor is " << self->getCursorName() << LL_ENDL;
+            LL_DEBUGS("Media")
+                << "Media event: "
+                << "MEDIA_EVENT_CURSOR_CHANGED, "
+                << "new cursor is "
+                << self->getCursorName()
+                << LL_ENDL;
         }
         break;
 
         case MEDIA_EVENT_NAVIGATE_BEGIN:
         {
-            LL_DEBUGS("Media") <<  "Media event:  MEDIA_EVENT_NAVIGATE_BEGIN, url is " << self->getNavigateURI() << LL_ENDL;
+            LL_DEBUGS("Media")
+                << "Media event: "
+                << "MEDIA_EVENT_NAVIGATE_BEGIN, "
+                << "url is "
+                << self->getNavigateURI()
+                << LL_ENDL;
+
             hideNotification();
-            mLoadingState = LOADING_STATE_LOADING;
+
+            mLoadingState =
+                LOADING_STATE_LOADING;
         };
         break;
 
         case MEDIA_EVENT_NAVIGATE_COMPLETE:
         {
-            LL_DEBUGS("Media") <<  "Media event:  MEDIA_EVENT_NAVIGATE_COMPLETE, result string is: " << self->getNavigateResultString() << LL_ENDL;
-            mLoadingState = LOADING_STATE_LOADED;
+            LL_DEBUGS("Media")
+                << "Media event: "
+                << "MEDIA_EVENT_NAVIGATE_COMPLETE, "
+                << "result string is: "
+                << self->
+                    getNavigateResultString()
+                << LL_ENDL;
+
+            mLoadingState =
+                LOADING_STATE_LOADED;
         };
         break;
 
         case MEDIA_EVENT_PROGRESS_UPDATED:
         {
-            LL_DEBUGS("Media") <<  "Media event:  MEDIA_EVENT_PROGRESS_UPDATED, loading at " << self->getProgressPercent() << "%" << LL_ENDL;
+            LL_DEBUGS("Media")
+                << "Media event: "
+                << "MEDIA_EVENT_PROGRESS_UPDATED, "
+                << "loading at "
+                << self->getProgressPercent()
+                << "%"
+                << LL_ENDL;
         };
         break;
 
         case MEDIA_EVENT_STATUS_TEXT_CHANGED:
         {
-            LL_DEBUGS("Media") <<  "Media event:  MEDIA_EVENT_STATUS_TEXT_CHANGED, new status text is: " << self->getStatusText() << LL_ENDL;
+            LL_DEBUGS("Media")
+                << "Media event: "
+                << "MEDIA_EVENT_STATUS_TEXT_CHANGED, "
+                << "new status text is: "
+                << self->getStatusText()
+                << LL_ENDL;
         };
         break;
 
         case MEDIA_EVENT_LOCATION_CHANGED:
         {
-            LL_DEBUGS("Media") <<  "Media event:  MEDIA_EVENT_LOCATION_CHANGED, new uri is: " << self->getLocation() << LL_ENDL;
+            LL_DEBUGS("Media")
+                << "Media event: "
+                << "MEDIA_EVENT_LOCATION_CHANGED, "
+                << "new uri is: "
+                << self->getLocation()
+                << LL_ENDL;
         };
         break;
 
         case MEDIA_EVENT_NAVIGATE_ERROR_PAGE:
         {
-            LL_DEBUGS("Media") <<  "Media event:  MEDIA_EVENT_NAVIGATE_ERROR_PAGE" << LL_ENDL;
-            if ( mErrorPageURL.length() > 0 )
+            LL_DEBUGS("Media")
+                << "Media event: "
+                << "MEDIA_EVENT_NAVIGATE_ERROR_PAGE"
+                << LL_ENDL;
+
+            if (mErrorPageURL.length() > 0)
             {
-                navigateTo(mErrorPageURL, HTTP_CONTENT_TEXT_HTML);
+                navigateTo(
+                    mErrorPageURL,
+                    HTTP_CONTENT_TEXT_HTML);
             };
-            mLoadingState = LOADING_STATE_ERROR;
+
+            mLoadingState =
+                LOADING_STATE_ERROR;
         };
         break;
 
         case MEDIA_EVENT_CLICK_LINK_HREF:
         {
-            // retrieve the event parameters
-            std::string url = self->getClickURL();
-            std::string target = self->isOverrideClickTarget() ? self->getOverrideClickTarget() : self->getClickTarget();
-            std::string uuid = self->getClickUUID();
-            LL_DEBUGS("Media") << "Media event:  MEDIA_EVENT_CLICK_LINK_HREF, target is \"" << target << "\", uri is " << url << LL_ENDL;
+            std::string url =
+                self->getClickURL();
 
-            // try as slurl first
-            if (!LLURLDispatcher::dispatch(url, "clicked", NULL, mTrusted))
+            std::string target =
+                self->isOverrideClickTarget()
+                ? self->getOverrideClickTarget()
+                : self->getClickTarget();
+
+            std::string uuid =
+                self->getClickUUID();
+
+            LL_DEBUGS("Media")
+                << "Media event: "
+                << "MEDIA_EVENT_CLICK_LINK_HREF, "
+                << "target is \""
+                << target
+                << "\", uri is "
+                << url
+                << LL_ENDL;
+
+            if (!LLURLDispatcher::dispatch(
+                    url,
+                    "clicked",
+                    NULL,
+                    mTrusted))
             {
-                LLWeb::loadURL(url, target, uuid);
+                LLWeb::loadURL(
+                    url,
+                    target,
+                    uuid);
             }
 
-            // CP: removing this code because we no longer support popups so this breaks the flow.
-            //     replaced with a bare call to LLWeb::LoadURL(...)
-            //LLNotification::Params notify_params;
-            //notify_params.name = "PopupAttempt";
-            //notify_params.payload = LLSD().with("target", target).with("url", url).with("uuid", uuid).with("media_id", mMediaTextureID);
-            //notify_params.functor.function = boost::bind(&LLMediaCtrl::onPopup, this, _1, _2);
-
-            //if (mTrusted)
-            //{
-            //  LLNotifications::instance().forceResponse(notify_params, 0);
-            //}
-            //else
-            //{
-            //  LLNotifications::instance().add(notify_params);
-            //}
             break;
         };
 
         case MEDIA_EVENT_CLICK_LINK_NOFOLLOW:
         {
-            LL_DEBUGS("Media") <<  "Media event:  MEDIA_EVENT_CLICK_LINK_NOFOLLOW, uri is " << self->getClickURL() << LL_ENDL;
+            LL_DEBUGS("Media")
+                << "Media event: "
+                << "MEDIA_EVENT_CLICK_LINK_NOFOLLOW, "
+                << "uri is "
+                << self->getClickURL()
+                << LL_ENDL;
         };
         break;
 
         case MEDIA_EVENT_PLUGIN_FAILED:
         {
-            LL_DEBUGS("Media") <<  "Media event:  MEDIA_EVENT_PLUGIN_FAILED" << LL_ENDL;
-            mLoadingState = LOADING_STATE_ERROR;
+            LL_DEBUGS("Media")
+                << "Media event: "
+                << "MEDIA_EVENT_PLUGIN_FAILED"
+                << LL_ENDL;
+
+            mLoadingState =
+                LOADING_STATE_ERROR;
         };
         break;
 
         case MEDIA_EVENT_PLUGIN_FAILED_LAUNCH:
         {
-            LL_DEBUGS("Media") <<  "Media event:  MEDIA_EVENT_PLUGIN_FAILED_LAUNCH" << LL_ENDL;
-            mLoadingState = LOADING_STATE_ERROR;
+            LL_DEBUGS("Media")
+                << "Media event: "
+                << "MEDIA_EVENT_PLUGIN_FAILED_LAUNCH"
+                << LL_ENDL;
+
+            mLoadingState =
+                LOADING_STATE_ERROR;
         };
         break;
 
         case MEDIA_EVENT_NAME_CHANGED:
         {
-            LL_DEBUGS("Media") <<  "Media event:  MEDIA_EVENT_NAME_CHANGED" << LL_ENDL;
+            LL_DEBUGS("Media")
+                << "Media event: "
+                << "MEDIA_EVENT_NAME_CHANGED"
+                << LL_ENDL;
         };
         break;
 
         case MEDIA_EVENT_CLOSE_REQUEST:
         {
-            LL_DEBUGS("Media") <<  "Media event:  MEDIA_EVENT_CLOSE_REQUEST" << LL_ENDL;
+            LL_DEBUGS("Media")
+                << "Media event: "
+                << "MEDIA_EVENT_CLOSE_REQUEST"
+                << LL_ENDL;
         }
         break;
 
         case MEDIA_EVENT_PICK_FILE_REQUEST:
         {
-            LL_DEBUGS("Media") <<  "Media event:  MEDIA_EVENT_PICK_FILE_REQUEST" << LL_ENDL;
+            LL_DEBUGS("Media")
+                << "Media event: "
+                << "MEDIA_EVENT_PICK_FILE_REQUEST"
+                << LL_ENDL;
         }
         break;
 
         case MEDIA_EVENT_GEOMETRY_CHANGE:
         {
-            LL_DEBUGS("Media") << "Media event:  MEDIA_EVENT_GEOMETRY_CHANGE, uuid is " << self->getClickUUID() << LL_ENDL;
+            LL_DEBUGS("Media")
+                << "Media event: "
+                << "MEDIA_EVENT_GEOMETRY_CHANGE, "
+                << "uuid is "
+                << self->getClickUUID()
+                << LL_ENDL;
         }
         break;
 
         case MEDIA_EVENT_AUTH_REQUEST:
         {
-            LLNotification::Params auth_request_params;
-            auth_request_params.name = "AuthRequest";
+            LLNotification::Params
+                auth_request_params;
 
-            // pass in host name and realm for site (may be zero length but will always exist)
+            auth_request_params.name =
+                "AuthRequest";
+
             LLSD args;
-            LLURL raw_url( self->getAuthURL().c_str() );
-            args["HOST_NAME"] = raw_url.getAuthority();
-            args["REALM"] = self->getAuthRealm();
-            auth_request_params.substitutions = args;
 
-            auth_request_params.payload = LLSD().with("media_id", mMediaTextureID);
-            auth_request_params.functor.function = boost::bind(&LLViewerMedia::authSubmitCallback, _1, _2);
-            LLNotifications::instance().add(auth_request_params);
+            LLURL raw_url(
+                self->getAuthURL().c_str());
+
+            args["HOST_NAME"] =
+                raw_url.getAuthority();
+
+            args["REALM"] =
+                self->getAuthRealm();
+
+            auth_request_params.
+                substitutions = args;
+
+            auth_request_params.
+                payload =
+                    LLSD().with(
+                        "media_id",
+                        mMediaTextureID);
+
+            auth_request_params.
+                functor.function =
+                    boost::bind(
+                        &LLViewerMedia::
+                            authSubmitCallback,
+                        _1,
+                        _2);
+
+            LLNotifications::instance().
+                add(auth_request_params);
         };
         break;
 
         case MEDIA_EVENT_LINK_HOVERED:
         {
-            LL_DEBUGS("Media") <<  "Media event:  MEDIA_EVENT_LINK_HOVERED, hover text is: " << self->getHoverText() << LL_ENDL;
+            LL_DEBUGS("Media")
+                << "Media event: "
+                << "MEDIA_EVENT_LINK_HOVERED, "
+                << "hover text is: "
+                << self->getHoverText()
+                << LL_ENDL;
+
             mHoverTextChanged = true;
         };
         break;
@@ -1195,56 +1603,118 @@ void LLMediaCtrl::handleMediaEvent(LLPluginClassMedia* self, EMediaEvent event)
         {
             if (mAllowFileDownload)
             {
-                // pick a file from SAVE FILE dialog
-                // for now the only thing that should be allowed to save is 360s
-                std::string suggested_filename = self->getFileDownloadFilename();
-                LLFilePicker::ESaveFilter filter = LLFilePicker::FFSAVE_ALL;
-                if (suggested_filename.find(".jpg") != std::string::npos || suggested_filename.find(".jpeg") != std::string::npos)
-                    filter = LLFilePicker::FFSAVE_JPEG;
-                if (suggested_filename.find(".png") != std::string::npos)
-                    filter = LLFilePicker::FFSAVE_PNG;
+                std::string suggested_filename =
+                    self->
+                        getFileDownloadFilename();
 
-                (new LLMediaFilePicker(self, filter, suggested_filename))->getFile();
+                LLFilePicker::ESaveFilter filter =
+                    LLFilePicker::FFSAVE_ALL;
+
+                if (suggested_filename.find(
+                        ".jpg") !=
+                    std::string::npos ||
+                    suggested_filename.find(
+                        ".jpeg") !=
+                    std::string::npos)
+                {
+                    filter =
+                        LLFilePicker::
+                            FFSAVE_JPEG;
+                }
+
+                if (suggested_filename.find(
+                        ".png") !=
+                    std::string::npos)
+                {
+                    filter =
+                        LLFilePicker::
+                            FFSAVE_PNG;
+                }
+
+                (new LLMediaFilePicker(
+                    self,
+                    filter,
+                    suggested_filename))->
+                        getFile();
             }
             else
             {
-                // Media might be blocked, waiting for a file,
-                // send an empty response to unblock it
-                const std::vector<std::string> empty_response;
-                self->sendPickFileResponse(empty_response);
+                const std::vector<std::string>
+                    empty_response;
 
-                LLNotificationsUtil::add("MediaFileDownloadUnsupported");
+                self->sendPickFileResponse(
+                    empty_response);
+
+                LLNotificationsUtil::add(
+                    "MediaFileDownloadUnsupported");
             }
         };
         break;
 
         case MEDIA_EVENT_DEBUG_MESSAGE:
         {
-            LL_INFOS("media") << self->getDebugMessageText() << LL_ENDL;
+            LL_INFOS("media")
+                << self->
+                    getDebugMessageText()
+                << LL_ENDL;
 
-            // Handle text extraction responses
-            std::string debug_text = self->getDebugMessageText();
-            if (debug_text.find(PAGE_TEXT_EXTRACT_MARKER) != std::string::npos)
+            std::string debug_text =
+                self->
+                    getDebugMessageText();
+
+            if (debug_text.find(
+                    PAGE_TEXT_EXTRACT_MARKER) !=
+                std::string::npos)
             {
-                if (LLPluginClassMedia* plugin = getMediaPlugin())
+                if (LLPluginClassMedia* plugin =
+                        getMediaPlugin())
                 {
-                    // Disable plugin debugging if it was used just for text extraction
-                    static LLCachedControl<bool> media_debugging(gSavedSettings, "MediaPluginDebugging", false);
-                    plugin->enableMediaPluginDebugging(media_debugging);
-                }
-                // Extract the pump name and page text
-                size_t marker_pos = debug_text.find(PAGE_TEXT_EXTRACT_MARKER);
-                if (marker_pos != std::string::npos)
-                {
-                    std::string remaining = debug_text.substr(marker_pos + PAGE_TEXT_EXTRACT_MARKER.length());
-                    size_t colon_pos = remaining.find(':');
-                    if (colon_pos != std::string::npos)
-                    {
-                        std::string pump_name = remaining.substr(0, colon_pos);
-                        std::string page_text = remaining.substr(colon_pos + 1);
+                    static
+                    LLCachedControl<bool>
+                    media_debugging(
+                        gSavedSettings,
+                        "MediaPluginDebugging",
+                        false);
 
-                        // Send the response directly to the specified pump
-                        LLEventPumps::instance().obtain(pump_name).post(LLSD().with("text", page_text));
+                    plugin->
+                        enableMediaPluginDebugging(
+                            media_debugging);
+                }
+
+                size_t marker_pos =
+                    debug_text.find(
+                        PAGE_TEXT_EXTRACT_MARKER);
+
+                if (marker_pos !=
+                    std::string::npos)
+                {
+                    std::string remaining =
+                        debug_text.substr(
+                            marker_pos +
+                            PAGE_TEXT_EXTRACT_MARKER.
+                                length());
+
+                    size_t colon_pos =
+                        remaining.find(':');
+
+                    if (colon_pos !=
+                        std::string::npos)
+                    {
+                        std::string pump_name =
+                            remaining.substr(
+                                0,
+                                colon_pos);
+
+                        std::string page_text =
+                            remaining.substr(
+                                colon_pos + 1);
+
+                        LLEventPumps::instance().
+                            obtain(pump_name).
+                            post(
+                                LLSD().with(
+                                    "text",
+                                    page_text));
                     }
                 }
             }
@@ -1252,7 +1722,6 @@ void LLMediaCtrl::handleMediaEvent(LLPluginClassMedia* self, EMediaEvent event)
         break;
     };
 
-    // chain all events to any potential observers of this object.
     emitEvent(self, event);
 }
 
@@ -1263,40 +1732,65 @@ std::string LLMediaCtrl::getCurrentNavUrl()
     return mCurrentNavUrl;
 }
 
-void LLMediaCtrl::onPopup(const LLSD& notification, const LLSD& response)
+void LLMediaCtrl::onPopup(
+    const LLSD& notification,
+    const LLSD& response)
 {
     if (response["open"])
     {
-        LLWeb::loadURL(notification["payload"]["url"], notification["payload"]["target"], notification["payload"]["uuid"]);
+        LLWeb::loadURL(
+            notification["payload"]["url"],
+            notification["payload"]["target"],
+            notification["payload"]["uuid"]);
     }
     else
     {
-        // Make sure the opening instance knows its window open request was denied, so it can clean things up.
-        LLViewerMedia::getInstance()->proxyWindowClosed(notification["payload"]["uuid"]);
+        LLViewerMedia::getInstance()->
+            proxyWindowClosed(
+                notification["payload"]
+                            ["uuid"]);
     }
 }
 
-void LLMediaCtrl::showNotification(LLNotificationPtr notify)
+void LLMediaCtrl::showNotification(
+    LLNotificationPtr notify)
 {
-    LLWindowShade* shade = getChild<LLWindowShade>("notification_shade");
+    LLWindowShade* shade =
+        getChild<LLWindowShade>(
+            "notification_shade");
 
-    if (notify->getIcon() == "Popup_Caution")
+    if (notify->getIcon() ==
+        "Popup_Caution")
     {
-        shade->setBackgroundImage(LLUI::getUIImage("Yellow_Gradient"));
-        shade->setTextColor(LLColor4::black);
+        shade->setBackgroundImage(
+            LLUI::getUIImage(
+                "Yellow_Gradient"));
+
+        shade->setTextColor(
+            LLColor4::black);
+
         shade->setCanClose(true);
     }
-    else if (notify->getName() == "AuthRequest")
+    else if (notify->getName() ==
+             "AuthRequest")
     {
-        shade->setBackgroundImage(LLUI::getUIImage("Yellow_Gradient"));
-        shade->setTextColor(LLColor4::black);
+        shade->setBackgroundImage(
+            LLUI::getUIImage(
+                "Yellow_Gradient"));
+
+        shade->setTextColor(
+            LLColor4::black);
+
         shade->setCanClose(false);
     }
     else
     {
-        //HACK: make this a property of the notification itself, "cancellable"
         shade->setCanClose(false);
-        shade->setTextColor(LLUIColorTable::instance().getColor("LabelTextColor"));
+
+        shade->setTextColor(
+            LLUIColorTable::instance().
+                getColor(
+                    "LabelTextColor"));
     }
 
     mWindowShade->show(notify);
@@ -1310,12 +1804,16 @@ void LLMediaCtrl::hideNotification()
     }
 }
 
-void LLMediaCtrl::setTrustedContent(bool trusted)
+void LLMediaCtrl::setTrustedContent(
+    bool trusted)
 {
     mTrusted = trusted;
+
     if (mMediaSource)
     {
-        mMediaSource->setTrustedBrowser(trusted);
+        mMediaSource->
+            setTrustedBrowser(
+                trusted);
     }
 }
 
@@ -1329,12 +1827,16 @@ bool LLMediaCtrl::wantsReturnKey() const
     return true;
 }
 
-std::string LLMediaCtrl::getMediaMimeType()
+std::string
+LLMediaCtrl::getMediaMimeType()
 {
-    return mMediaSource ? mMediaSource->getMimeType() : "unknown";
+    return mMediaSource
+        ? mMediaSource->getMimeType()
+        : "unknown";
 }
 
-std::string LLMediaCtrl::getMediaLoadingStatus()
+std::string
+LLMediaCtrl::getMediaLoadingStatus()
 {
     if (!mMediaSource)
     {
@@ -1345,10 +1847,13 @@ std::string LLMediaCtrl::getMediaLoadingStatus()
     {
         case LOADING_STATE_INITIALIZING:
             return "initializing";
+
         case LOADING_STATE_LOADING:
             return "loading";
+
         case LOADING_STATE_LOADED:
             return "loaded";
+
         case LOADING_STATE_ERROR:
         default:
             return "error";
@@ -1359,150 +1864,283 @@ std::string LLMediaCtrl::getMediaTitle()
 {
     if (mMediaSource)
     {
-        if (LLPluginClassMedia* plugin = mMediaSource->getMediaPlugin())
+        if (LLPluginClassMedia* plugin =
+                mMediaSource->
+                    getMediaPlugin())
         {
-            return plugin->getMediaName();
+            return plugin->
+                getMediaName();
         }
     }
+
     return "unknown";
 }
 
-bool LLMediaCtrl::executeJavaScript(const std::string& script)
+bool LLMediaCtrl::executeJavaScript(
+    const std::string& script)
 {
-    if (mMediaSource && mMediaSource->hasMedia())
+    if (mMediaSource &&
+        mMediaSource->hasMedia())
     {
-        mMediaSource->executeJavaScript(script);
+        mMediaSource->
+            executeJavaScript(script);
+
         return true;
     }
+
     return false;
 }
 
-class LLMediaCtrlListener: public LLEventAPI
+class LLMediaCtrlListener:
+    public LLEventAPI
 {
 public:
     LLMediaCtrlListener();
 
 private:
-    void getMediaInfo(const LLSD& request);
-    void getMediaText(const LLSD& request);
-    void getPluginsList(const LLSD& request);
-    void replyError(const LLSD& request, const std::string& error);
-    LLMediaCtrl* findMediaCtrl(const std::string& path);
+    void getMediaInfo(
+        const LLSD& request);
+
+    void getMediaText(
+        const LLSD& request);
+
+    void getPluginsList(
+        const LLSD& request);
+
+    void replyError(
+        const LLSD& request,
+        const std::string& error);
+
+    LLMediaCtrl* findMediaCtrl(
+        const std::string& path);
 };
 
-LLMediaCtrlListener::LLMediaCtrlListener():
-    LLEventAPI("LLMediaAPI", "Acces to LLMediaCtrl(web_browse widget) info")
+LLMediaCtrlListener::
+LLMediaCtrlListener():
+    LLEventAPI(
+        "LLMediaAPI",
+        "Acces to LLMediaCtrl(web_browse widget) info")
 {
-    add("getMediaInfo",
+    add(
+        "getMediaInfo",
         "Get information about the web_browser widget specified by [\"path\"].\n"
         "Returns URL, MIME type, and loading status of the widget.",
         &LLMediaCtrlListener::getMediaInfo,
-        llsd::map("path", LLSD(), "reply", LLSD()));
+        llsd::map(
+            "path",
+            LLSD(),
+            "reply",
+            LLSD()));
 
-    add("getMediaText",
+    add(
+        "getMediaText",
         "Get text content from the web_browser widget specified by [\"path\"].\n"
         "Returns the text content of the page or a portion of it.",
         &LLMediaCtrlListener::getMediaText,
-        llsd::map("path", LLSD(), "reply", LLSD()));
+        llsd::map(
+            "path",
+            LLSD(),
+            "reply",
+            LLSD()));
 
-    add("getPluginsList",
+    add(
+        "getPluginsList",
         "Enumerate the active media plugin (SLPlugin) instances.\n"
         "Reply contains [\"plugins\"] an array of { pid, url, mime_type, remote_debugging_port } entries.",
         &LLMediaCtrlListener::getPluginsList,
-        llsd::map("reply", LLSD()));
+        llsd::map(
+            "reply",
+            LLSD()));
 }
 
-LLMediaCtrl* LLMediaCtrlListener::findMediaCtrl(const std::string& path)
+LLMediaCtrl*
+LLMediaCtrlListener::findMediaCtrl(
+    const std::string& path)
 {
-    LLView* view = LLUI::getInstance()->resolvePath(LLUI::getInstance()->getRootView(), path);
+    LLView* view =
+        LLUI::getInstance()->
+            resolvePath(
+                LLUI::getInstance()->
+                    getRootView(),
+                path);
+
     if (!view)
     {
         return nullptr;
     }
-    return dynamic_cast<LLMediaCtrl*>(view);
+
+    return dynamic_cast<LLMediaCtrl*>(
+        view);
 }
 
-void LLMediaCtrlListener::getMediaInfo(const LLSD& request)
+void LLMediaCtrlListener::getMediaInfo(
+    const LLSD& request)
 {
-    Response reply(LLSD(), request);
-    std::string path = request["path"];
+    Response reply(
+        LLSD(),
+        request);
 
-    LLMediaCtrl* media_ctrl = findMediaCtrl(path);
+    std::string path =
+        request["path"];
+
+    LLMediaCtrl* media_ctrl =
+        findMediaCtrl(path);
+
     if (!media_ctrl)
     {
-        reply["error"] = "Could not find web_browser widget at path: " + path;
+        reply["error"] =
+            "Could not find web_browser widget at path: " +
+            path;
+
         return;
     }
 
-    reply["url"] = media_ctrl->getCurrentNavUrl();
-    reply["mime_type"] = media_ctrl->getMediaMimeType();
-    reply["status"] = media_ctrl->getMediaLoadingStatus();
-    reply["title"] = media_ctrl->getMediaTitle();
+    reply["url"] =
+        media_ctrl->
+            getCurrentNavUrl();
+
+    reply["mime_type"] =
+        media_ctrl->
+            getMediaMimeType();
+
+    reply["status"] =
+        media_ctrl->
+            getMediaLoadingStatus();
+
+    reply["title"] =
+        media_ctrl->
+            getMediaTitle();
 }
 
-void LLMediaCtrlListener::replyError(const LLSD& request, const std::string& error)
+void LLMediaCtrlListener::replyError(
+    const LLSD& request,
+    const std::string& error)
 {
-    Response reply(LLSD(), request);
+    Response reply(
+        LLSD(),
+        request);
+
     reply["error"] = error;
 }
 
-void LLMediaCtrlListener::getMediaText(const LLSD& request)
+void LLMediaCtrlListener::getMediaText(
+    const LLSD& request)
 {
-    std::string path = request["path"];
+    std::string path =
+        request["path"];
 
-    LLMediaCtrl* media_ctrl = findMediaCtrl(path);
+    LLMediaCtrl* media_ctrl =
+        findMediaCtrl(path);
+
     if (!media_ctrl)
     {
-        replyError(request, "Could not find web_browser widget at path: " + path);
+        replyError(
+            request,
+            "Could not find web_browser widget at path: " +
+            path);
+
         return;
     }
 
-    LLPluginClassMedia* plugin = media_ctrl->getMediaPlugin();
+    LLPluginClassMedia* plugin =
+        media_ctrl->getMediaPlugin();
+
     if (!plugin)
     {
-        replyError(request, "Media plugin is not available for widget at path: " + path);
+        replyError(
+            request,
+            "Media plugin is not available for widget at path: " +
+            path);
+
         return;
     }
 
-    // Enable plugin debugging to capture console messages
-    plugin->enableMediaPluginDebugging(true);
-    std::string pump_name = request["reply"].asString();
+    plugin->
+        enableMediaPluginDebugging(
+            true);
 
-    // Execute JavaScript to extract page text, embedding pump name in the marker
-    const std::string text_extract_script = "console.log('" + PAGE_TEXT_EXTRACT_MARKER + pump_name + ":' + "
-                          "(document.body ? (document.body.innerText ? document.body.innerText.substring(0, 1000).replace(/\\s+/g, ' ').trim() : "
-                          "'No text content') : 'Document body not ready'));";
+    std::string pump_name =
+        request["reply"].
+            asString();
 
-    if (!media_ctrl->executeJavaScript(text_extract_script))
+    const std::string
+        text_extract_script =
+            "console.log('" +
+            PAGE_TEXT_EXTRACT_MARKER +
+            pump_name +
+            ":' + "
+            "(document.body ? "
+            "(document.body.innerText ? "
+            "document.body.innerText.substring(0, 1000)"
+            ".replace(/\\s+/g, ' ').trim() : "
+            "'No text content') : "
+            "'Document body not ready'));";
+
+    if (!media_ctrl->
+            executeJavaScript(
+                text_extract_script))
     {
-        replyError(request, "Failed to execute JavaScript for text extraction");
+        replyError(
+            request,
+            "Failed to execute JavaScript for text extraction");
     }
 }
 
-void LLMediaCtrlListener::getPluginsList(const LLSD& request)
+void LLMediaCtrlListener::getPluginsList(
+    const LLSD& request)
 {
-    Response reply(LLSD(), request);
+    Response reply(
+        LLSD(),
+        request);
 
     LLSD plugins;
 
-    LLViewerMedia::impl_list& impls = LLViewerMedia::getInstance()->getPriorityList();
-    for (LLViewerMedia::impl_list::iterator it = impls.begin(); it != impls.end(); ++it)
+    LLViewerMedia::impl_list&
+        impls =
+            LLViewerMedia::
+                getInstance()->
+                    getPriorityList();
+
+    for (
+        LLViewerMedia::impl_list::
+            iterator it = impls.begin();
+        it != impls.end();
+        ++it)
     {
-        LLViewerMediaImpl* impl = *it;
+        LLViewerMediaImpl* impl =
+            *it;
+
         if (!impl)
         {
             continue;
         }
-        LLPluginClassMedia* plugin = impl->getMediaPlugin();
+
+        LLPluginClassMedia* plugin =
+            impl->getMediaPlugin();
 
         LLSD entry;
-        entry["url"] = impl->getCurrentMediaURL();
-        entry["mime_type"] = impl->getMimeType();
-        entry["pid"] = plugin ? plugin->getProcessID() : 0;
-        entry["remote_debugging_port"] = plugin ? (S32)plugin->getCefRemoteDebuggingPort() : 0;
+
+        entry["url"] =
+            impl->
+                getCurrentMediaURL();
+
+        entry["mime_type"] =
+            impl->getMimeType();
+
+        entry["pid"] =
+            plugin
+            ? plugin->getProcessID()
+            : 0;
+
+        entry["remote_debugging_port"] =
+            plugin
+            ? (S32)plugin->
+                getCefRemoteDebuggingPort()
+            : 0;
 
         plugins.append(entry);
     }
+
     reply["plugins"] = plugins;
 }
 

@@ -4,14 +4,14 @@
 	image_pressed_selected
   image_flash
    -->
-<button image_unselected="PushButton_Off"
+<button draw_focus_border="false" image_unselected="PushButton_Off"
         image_selected="PushButton_Selected"
         image_disabled_selected="PushButton_Selected_Disabled"
         image_disabled="PushButton_Disabled"
         image_top_pad="0"
         image_bottom_pad="0"
         imgoverlay_label_space="1"
-        label_color="White"
+        label_color="ButtonLabelColor"
         label_color_selected="ButtonLabelSelectedColor"
         label_color_disabled="ButtonLabelDisabledColor"
         label_color_disabled_selected="ButtonLabelSelectedDisabledColor"

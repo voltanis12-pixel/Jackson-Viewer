@@ -174,6 +174,7 @@ class ViewerManifest(LLManifest):
                     with self.prefix(src="*/html", dst="*/html"):
                         self.path("*/*/*/*.js")
                         self.path("*/*/*.html")
+                        self.path("*/*/*.mp4")
 
             #build_data.json.  Standard with exception handling is fine.  If we can't open a new file for writing, we have worse problems
             #platform is computed above with other arg parsing
@@ -214,8 +215,9 @@ class ViewerManifest(LLManifest):
         return fullchannel
 
     def channel_variant(self):
-        global CHANNEL_VENDOR_BASE
-        return self.channel().replace(CHANNEL_VENDOR_BASE, "").strip()
+        # Jackson Viewer channels use "Jackson" as the vendor base.
+        # Example: "Jackson Release" -> "Release".
+        return self.channel().replace("Jackson", "", 1).strip()
 
     def channel_type(self): # returns 'release', 'beta', 'project', or 'test'
         channel_qualifier=self.channel_variant().lower()
@@ -245,21 +247,20 @@ class ViewerManifest(LLManifest):
         return suffix
 
     def installer_base_name(self):
-        global CHANNEL_VENDOR_BASE
-        # a standard map of strings for replacing in the templates
+        # Public Jackson Viewer Windows installer name.
+        # Keep the release channel out of the filename so we do not end up
+        # with duplicated names such as Jackson_Jackson_Release_....
         substitution_strings = {
-            'channel_vendor_base' : 'Nova',
-            'channel_variant_underscores':self.channel_variant_app_suffix(),
             'version_underscores' : '_'.join(self.args['version']),
             'arch':self.args['arch']
             }
-        return "%(channel_vendor_base)s%(channel_variant_underscores)s_%(version_underscores)s_%(arch)s" % substitution_strings
+        return "Jackson_Viewer_%(version_underscores)s_%(arch)s" % substitution_strings
 
     def installer_base_name_mac(self):
         global CHANNEL_VENDOR_BASE
         # a standard map of strings for replacing in the templates
         substitution_strings = {
-            'channel_vendor_base' : 'Nova',
+            'channel_vendor_base' : 'Jackson',
             'channel_variant_underscores':self.channel_variant_app_suffix(),
             'version_underscores' : '_'.join(self.args['version'])
             }
@@ -272,10 +273,10 @@ class ViewerManifest(LLManifest):
             app_suffix='Viewer'
         else:
             app_suffix=self.channel_variant()
-        return 'Nova' + ' ' + app_suffix
+        return 'Jackson' + ' ' + app_suffix
 
     def exec_name(self):
-        return "NovaViewer"
+        return "JacksonViewer"
 
     def app_name_oneword(self):
         return ''.join(self.app_name().split())
@@ -828,12 +829,12 @@ class Windows_x86_64_Manifest(ViewerManifest):
             '--shortcuts', '',
         ]
 
-        # Add icon — CMake copies the channel-appropriate secondlife.ico to res/ll_icon.ico
+        # Add icon, CMake copies the channel-appropriate secondlife.ico to res/ll_icon.ico
         if os.path.exists(icon_path):
             print("Using icon: %s" % icon_path)
             vpk_args.extend(['--icon', icon_path])
         else:
-            print("WARNING: Icon not found at %s — Setup.exe will have no icon" % icon_path)
+            print("WARNING: Icon not found at %s, Setup.exe will have no icon" % icon_path)
 
         print("Running Velopack packaging: %s" % ' '.join(vpk_args))
 
@@ -1544,3 +1545,4 @@ if __name__ == "__main__":
         sys.exit("\nviewer_manifest.py failed: "+err.msg)
     except:
         raise
+

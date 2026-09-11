@@ -16660,5 +16660,49 @@
       <key>Value</key>
       <integer>0</integer>
     </map>
+    <key>CreatorViewOpenCreatorFolders</key>
+    <map>
+      <key>Comment</key>
+      <string>Semicolon-separated creator UUIDs whose virtual Creator View folders are open.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>String</string>
+      <key>Value</key>
+      <string />
+    </map>
+    <key>CreatorViewStoreAliases</key>
+    <map>
+      <key>Comment</key>
+      <string>Viewer-only creator UUID to store/brand alias mappings for Creator View.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>String</string>
+      <key>Value</key>
+      <string />
+    </map>
+    <key>CreatorViewItemClassifications</key>
+    <map>
+      <key>Comment</key>
+      <string>Viewer-only inventory item UUID to Creator View classification override mappings.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>String</string>
+      <key>Value</key>
+      <string />
+    </map>
+    <key>CreatorViewOpenTypeFolders</key>
+    <map>
+      <key>Comment</key>
+      <string>Creator View category subfolders remembered open by creator UUID and category type.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>String</string>
+      <key>Value</key>
+      <string />
+    </map>
 </map>
 </llsd>

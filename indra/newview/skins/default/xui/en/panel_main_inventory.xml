@@ -221,8 +221,8 @@
        use_tab_offset="true"
        top="0">
         <inventory_panel
-         bg_opaque_color="DkGray2"
-         bg_alpha_color="DkGray2"
+         bg_opaque_color="InventoryBackgroundColor"
+         bg_alpha_color="InventoryBackgroundColor"
          background_visible="true"
          border="false"
          bevel_style="none"
@@ -238,8 +238,8 @@
             <folder double_click_override="true"/>
         </inventory_panel>
         <recent_inventory_panel
-         bg_opaque_color="DkGray2"
-         bg_alpha_color="DkGray2"
+         bg_opaque_color="InventoryBackgroundColor"
+         bg_alpha_color="InventoryBackgroundColor"
          background_visible="true"
          border="false"
          bevel_style="none"
@@ -259,8 +259,8 @@
          show_empty_message="false"
          follows="all"
          layout="topleft"
-         bg_opaque_color="DkGray2"
-         bg_alpha_color="DkGray2"
+         bg_opaque_color="InventoryBackgroundColor"
+         bg_alpha_color="InventoryBackgroundColor"
          background_visible="true"
          preinitialize_views="false"
          border="false"
@@ -269,8 +269,8 @@
             <folder double_click_override="true"/>
         </inventory_panel>
         <favorites_inventory_panel
-         bg_opaque_color="DkGray2"
-         bg_alpha_color="DkGray2"
+         bg_opaque_color="InventoryBackgroundColor"
+         bg_alpha_color="InventoryBackgroundColor"
          background_visible="true"
          border="false"
          bevel_style="none"
@@ -284,6 +284,23 @@
          scroll.reserve_scroll_corner="false">
           <folder double_click_override="true"/>
         </favorites_inventory_panel>
+        <creator_inventory_panel
+         bg_opaque_color="DkGray2"
+         bg_alpha_color="DkGray2"
+         background_visible="true"
+         border="false"
+         bevel_style="none"
+         follows="all"
+         label="CREATORS"
+         help_topic="my_inventory_tab"
+         layout="topleft"
+         name="Creator Items"
+         sort_order_setting="InventorySortOrder"
+         show_item_link_overlays="true"
+         preinitialize_views="false"
+         scroll.reserve_scroll_corner="false">
+            <folder double_click_override="true"/>
+        </creator_inventory_panel>
       </tab_container>
     </panel>
     <panel
@@ -345,8 +362,8 @@
          height="127"
          layout="topleft"
          show_item_link_overlays="true"
-         bg_opaque_color="DkGray2"
-         bg_alpha_color="DkGray2"
+         bg_opaque_color="InventoryBackgroundColor"
+         bg_alpha_color="InventoryBackgroundColor"
          background_visible="true"
          border="false"
          bevel_style="none"
@@ -362,3 +379,4 @@
      </layout_stack>
     </panel>
 </panel>
+

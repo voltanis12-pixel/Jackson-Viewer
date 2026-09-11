@@ -631,7 +631,137 @@
      function="Inventory.DoToSelected"
      parameter="save_selected_as" />
   </menu_item_call>
-    <menu_item_separator
+        <menu_item_separator
+     layout="topleft"
+     name="Creator Classification Separator"/>
+    <menu
+     label="Classify As"
+     layout="topleft"
+     name="Creator Classification">
+        <menu_item_call
+         label="Auto (Use Classifier)"
+         layout="topleft"
+         name="Creator Classify Auto">
+            <menu_item_call.on_click
+             function="Inventory.DoToSelected"
+             parameter="creator_classify_auto"/>
+        </menu_item_call>
+        <menu_item_separator
+         layout="topleft"/>
+        <menu_item_call
+         label="Shirts / Tops"
+         layout="topleft"
+         name="Creator Classify Shirts">
+            <menu_item_call.on_click
+             function="Inventory.DoToSelected"
+             parameter="creator_classify_shirts"/>
+        </menu_item_call>
+        <menu_item_call
+         label="Pants / Bottoms"
+         layout="topleft"
+         name="Creator Classify Pants">
+            <menu_item_call.on_click
+             function="Inventory.DoToSelected"
+             parameter="creator_classify_pants"/>
+        </menu_item_call>
+        <menu_item_call
+         label="Shoes / Footwear"
+         layout="topleft"
+         name="Creator Classify Shoes">
+            <menu_item_call.on_click
+             function="Inventory.DoToSelected"
+             parameter="creator_classify_shoes"/>
+        </menu_item_call>
+        <menu_item_call
+         label="Jackets / Outerwear"
+         layout="topleft"
+         name="Creator Classify Jackets">
+            <menu_item_call.on_click
+             function="Inventory.DoToSelected"
+             parameter="creator_classify_jackets"/>
+        </menu_item_call>
+        <menu_item_call
+         label="Socks / Hosiery"
+         layout="topleft"
+         name="Creator Classify Socks">
+            <menu_item_call.on_click
+             function="Inventory.DoToSelected"
+             parameter="creator_classify_socks"/>
+        </menu_item_call>
+        <menu_item_call
+         label="Gloves"
+         layout="topleft"
+         name="Creator Classify Gloves">
+            <menu_item_call.on_click
+             function="Inventory.DoToSelected"
+             parameter="creator_classify_gloves"/>
+        </menu_item_call>
+        <menu_item_call
+         label="Skirts"
+         layout="topleft"
+         name="Creator Classify Skirts">
+            <menu_item_call.on_click
+             function="Inventory.DoToSelected"
+             parameter="creator_classify_skirts"/>
+        </menu_item_call>
+        <menu_item_call
+         label="Dresses / Full Outfits"
+         layout="topleft"
+         name="Creator Classify Dresses">
+            <menu_item_call.on_click
+             function="Inventory.DoToSelected"
+             parameter="creator_classify_dresses"/>
+        </menu_item_call>
+        <menu_item_call
+         label="Underwear / Lingerie"
+         layout="topleft"
+         name="Creator Classify Underwear">
+            <menu_item_call.on_click
+             function="Inventory.DoToSelected"
+             parameter="creator_classify_underwear"/>
+        </menu_item_call>
+        <menu_item_call
+         label="Hair"
+         layout="topleft"
+         name="Creator Classify Hair">
+            <menu_item_call.on_click
+             function="Inventory.DoToSelected"
+             parameter="creator_classify_hair"/>
+        </menu_item_call>
+        <menu_item_call
+         label="Body Parts"
+         layout="topleft"
+         name="Creator Classify Body Parts">
+            <menu_item_call.on_click
+             function="Inventory.DoToSelected"
+             parameter="creator_classify_body_parts"/>
+        </menu_item_call>
+        <menu_item_call
+         label="Body Layers"
+         layout="topleft"
+         name="Creator Classify Body Layers">
+            <menu_item_call.on_click
+             function="Inventory.DoToSelected"
+             parameter="creator_classify_body_layers"/>
+        </menu_item_call>
+        <menu_item_call
+         label="Accessories"
+         layout="topleft"
+         name="Creator Classify Accessories">
+            <menu_item_call.on_click
+             function="Inventory.DoToSelected"
+             parameter="creator_classify_accessories"/>
+        </menu_item_call>
+        <menu_item_call
+         label="Other Wearables"
+         layout="topleft"
+         name="Creator Classify Other">
+            <menu_item_call.on_click
+             function="Inventory.DoToSelected"
+             parameter="creator_classify_other"/>
+        </menu_item_call>
+    </menu>
+<menu_item_separator
      layout="topleft" 
      name="Wearable And Object Separator"/>
 	<!-- COMMENTED OUT for DEV-32347 -->

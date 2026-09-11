@@ -37,7 +37,7 @@
                     width="30"
                     mouse_opaque="false">
         <toolbar follows="left|top|bottom"
-                 button_panel.bg_opaque_image="Rounded_Rect_Right"
+                 button_panel.bg_opaque_image="Jackson_Toolbar_Right"
                  name="toolbar_left"
                  width="30"
                  left="0"
@@ -103,7 +103,7 @@
                     width="30"
                     mouse_opaque="false">
         <toolbar
-          button_panel.bg_opaque_image="Rounded_Rect_Left"
+          button_panel.bg_opaque_image="Jackson_Toolbar_Left"
           follows="right|top|bottom"
           name="toolbar_right"
           width="30"
@@ -132,7 +132,7 @@
                 width="1024"
                 mouse_opaque="false">
     <toolbar layout="topleft"
-             button_panel.bg_opaque_image="Rounded_Rect_Top"
+             button_panel.bg_opaque_image="Jackson_Toolbar_Top"
              name="toolbar_bottom"
              height="30"
              left="40"
@@ -157,3 +157,5 @@
   </layout_panel>
   </layout_stack>
 </toolbar_view>
+
+

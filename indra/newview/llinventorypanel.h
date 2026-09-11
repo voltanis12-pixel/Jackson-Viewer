@@ -255,6 +255,7 @@ public:
     void addItemID(const LLUUID& id, LLFolderViewItem* itemp);
     virtual void removeItemID(const LLUUID& id);
     virtual bool isInRootContent(const LLUUID& id, LLFolderViewItem* view_item) { return false; }
+    virtual bool showCreatorNamesInLabels() const { return false; }
     LLFolderViewItem* getItemByID(const LLUUID& id);
     LLFolderViewFolder* getFolderByID(const LLUUID& id);
     void setSelectionByID(const LLUUID& obj_id, bool take_keyboard_focus);

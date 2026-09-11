@@ -1002,6 +1002,14 @@ void LLInvFVBridge::getClipboardEntries(bool show_asset_id,
         addDeleteContextMenuOptions(items, disabled_items);
     }
 
+    if (obj
+        && obj->getType() != LLAssetType::AT_CATEGORY
+        && isPanelActive("Creator Items"))
+    {
+        items.push_back(std::string("Creator Classification Separator"));
+        items.push_back(std::string("Creator Classification"));
+    }
+
     if (!isPanelActive("All Items") && !isPanelActive("comb_single_folder_inv"))
     {
         items.push_back(std::string("Show in Main Panel"));
@@ -2068,7 +2076,7 @@ void LLItemBridge::buildSearchableName() const
 
     // Searchable and name set, so trigger a sort
     LLInventorySort sorter = static_cast<LLFolderViewModelInventory&>(mRootViewModel).getSorter();
-    if (mParent && !sorter.isByDate())
+    if (mParent && (!sorter.isByDate() || sorter.isByCreator()))
     {
         mParent->requestSort();
     }
@@ -2137,6 +2145,23 @@ std::string LLItemBridge::getLabelSuffix() const
                 suffix += NO_XFER;
             }
         }
+    }
+
+    LLInventoryPanel* panel = mInventoryPanel.get();
+    if (panel && panel->showCreatorNamesInLabels())
+    {
+        std::string creator_name = "Unknown Creator";
+        if (LLInventoryItem* item = getItem())
+        {
+            LLAvatarName av_name;
+            if (LLAvatarNameCache::get(item->getCreatorUUID(), &av_name))
+            {
+                creator_name = av_name.getUserName();
+            }
+        }
+
+        suffix += "  |  Creator: ";
+        suffix += creator_name;
     }
 
     return suffix;

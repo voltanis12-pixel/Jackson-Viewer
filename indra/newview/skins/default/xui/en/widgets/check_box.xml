@@ -8,7 +8,7 @@
                         height="0"
                         text_color="LabelTextColor"
                         text_readonly_color="LabelDisabledColor"/>
-  <check_box.check_button name="CheckboxCtrl Button"
+  <check_box.check_button name=CheckboxCtrl Button image_color=0.78 0.60 0.38 1 image_color_disabled=0.38 0.32 0.27 1"
                           left="2"
                           bottom="1"
                           width="13"

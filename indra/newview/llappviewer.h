@@ -311,7 +311,7 @@ protected:
     // NSIS's method is somewhat unreliable since window
     // can close long before cleanup is done.
     // sendURLToOtherInstance also relies on this to detect if viewer is up.
-    static constexpr const char* sWindowClass = "Nova Viewer";
+    static constexpr const char* sWindowClass = "Jackson Viewer";
 
 private:
 
@@ -465,3 +465,4 @@ extern bool gDoDisconnect;
 extern bool gSimulateMemLeak;
 
 #endif // LL_LLAPPVIEWER_H
+

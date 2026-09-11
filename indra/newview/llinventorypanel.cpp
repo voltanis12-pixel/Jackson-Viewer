@@ -26,6 +26,7 @@
 
 #include "llviewerprecompiledheaders.h"
 #include "llinventorypanel.h"
+#include "llwearabletype.h"
 
 #include <utility> // for std::pair<>
 
@@ -33,6 +34,7 @@
 #include "llagentwearables.h"
 #include "llappearancemgr.h"
 #include "llavataractions.h"
+#include "llavatarnamecache.h"
 #include "llclipboard.h"
 #include "llfloaterreg.h"
 #include "llfloatersidepanelcontainer.h"
@@ -44,6 +46,7 @@
 #include "llinventorybridge.h"
 #include "llinventoryfunctions.h"
 #include "llinventorymodelbackgroundfetch.h"
+#include "llmenugl.h"
 #include "llnotificationsutil.h"
 #include "llpanelmaininventory.h"
 #include "llpreview.h"
@@ -56,12 +59,14 @@
 #include "llvoavatarself.h"
 
 class LLInventoryFavoritesItemsPanel;
+class LLInventoryCreatorItemsPanel;
 class LLInventoryRecentItemsPanel;
 class LLAssetFilteredInventoryPanel;
 
 static LLDefaultChildRegistry::Register<LLInventoryPanel> r("inventory_panel");
 static LLDefaultChildRegistry::Register<LLInventoryRecentItemsPanel> t_recent_inventory_panel("recent_inventory_panel");
 static LLDefaultChildRegistry::Register<LLInventoryFavoritesItemsPanel> t_favorites_inventory_panel("favorites_inventory_panel");
+static LLDefaultChildRegistry::Register<LLInventoryCreatorItemsPanel> t_creator_inventory_panel("creator_inventory_panel");
 static LLDefaultChildRegistry::Register<LLAssetFilteredInventoryPanel> t_asset_filtered_inv_panel("asset_filtered_inv_panel");
 
 const std::string LLInventoryPanel::DEFAULT_SORT_ORDER = std::string("InventorySortOrder");
@@ -2311,6 +2316,1674 @@ LLInventoryRecentItemsPanel::LLInventoryRecentItemsPanel( const Params& params)
     mInvFVBridgeBuilder = &RECENT_ITEMS_BUILDER;
 }
 
+/************************************************************************/
+/* Creator Inventory Panel related classes                              */
+/************************************************************************/
+
+class LLCreatorVirtualFolderBridge final : public LLFolderBridge
+{
+public:
+    LLCreatorVirtualFolderBridge(
+        LLInventoryPanel* inventory,
+        LLFolderView* root,
+        const LLUUID& group_id,
+        const LLUUID& creator_id)
+        : LLFolderBridge(inventory, root, group_id),
+          mCreatorID(creator_id),
+          mCreatorName(),
+          mStoreAlias(),
+          mBaseName(),
+          mDisplayName(),
+          mItemCount(0)
+    {
+        loadStoreAlias();
+        refreshCreatorName();
+        updateDisplayName();
+    }
+
+    const std::string& getName() const override
+    {
+        refreshCreatorName();
+        return mBaseName;
+    }
+
+    const std::string& getDisplayName() const override
+    {
+        refreshCreatorName();
+        return mDisplayName;
+    }
+
+    std::string getSearchableCreatorName() const override
+    {
+        refreshCreatorName();
+
+        std::string searchable = mStoreAlias;
+        if (!searchable.empty() && !mCreatorName.empty())
+        {
+            searchable += " ";
+        }
+        searchable += mCreatorName;
+        return searchable;
+    }
+
+    void buildSearchableName() const override
+    {
+        mSearchableName = getSearchableCreatorName();
+        LLStringUtil::toUpper(mSearchableName);
+    }
+
+    LLFolderType::EType getPreferredType() const override
+    {
+        return LLFolderType::FT_NONE;
+    }
+
+    bool hasChildren() const override { return true; }
+    bool isUpToDate() const override { return true; }
+
+    bool isItemRenameable() const override
+    {
+        return mCreatorID.notNull();
+    }
+
+    bool renameItem(const std::string& new_name) override
+    {
+        if (mCreatorID.isNull() || new_name.empty())
+        {
+            return false;
+        }
+
+        mStoreAlias = new_name;
+        saveStoreAlias();
+        mSearchableName.clear();
+        updateDisplayName();
+
+        // This is a viewer-only synthetic folder. Unlike a real inventory
+        // category, changing the alias does not generate an inventory-model
+        // observer notification, so refresh the visible row explicitly.
+        LLInventoryPanel* panel = mInventoryPanel.get();
+        if (panel)
+        {
+            LLFolderViewItem* view_item = panel->getItemByID(mUUID);
+            if (view_item)
+            {
+                view_item->refresh();
+
+                LLFolderViewFolder* parent_folder =
+                    view_item->getParentFolder();
+
+                if (parent_folder)
+                {
+                    if (parent_folder->getViewModelItem())
+                    {
+                        parent_folder->getViewModelItem()->requestSort();
+                    }
+                    parent_folder->requestArrange();
+                }
+            }
+
+            LLFolderView* root = panel->getRootFolder();
+            if (root)
+            {
+                root->requestArrange();
+            }
+        }
+
+        requestSort();
+        return true;
+    }
+
+    bool removeItem() override { return false; }
+    bool isItemRemovable(bool = true) const override { return false; }
+    bool isItemMovable() const override { return false; }
+    bool isItemCopyable(bool = true) const override { return false; }
+    bool copyToClipboard() const override { return false; }
+    bool cutToClipboard() override { return false; }
+    bool isClipboardPasteable() const override { return false; }
+    bool isClipboardPasteableAsLink() const override { return false; }
+    void pasteFromClipboard() override {}
+    void pasteLinkFromClipboard() override {}
+
+    bool startDrag(EDragAndDropType* type, LLUUID* id) const override
+    {
+        if (type) *type = DAD_NONE;
+        if (id) *id = LLUUID::null;
+        return false;
+    }
+
+    bool dragOrDrop(MASK, bool, EDragAndDropType, void*, std::string&) override
+    {
+        return false;
+    }
+
+    void openItem() override {}
+    void closeItem() override {}
+    void selectItem() override {}
+    void showProperties() override {}
+    // Jackson Viewer: virtual store folder context menu.
+    // This synthetic UUID is not a real LLInventoryCategory, so the stock
+    // LLFolderBridge context-menu builder cannot discover Rename for it.
+    void buildContextMenu(LLMenuGL& menu, U32 flags) override
+    {
+        menuentry_vec_t items;
+        menuentry_vec_t disabled_items;
+
+        items.push_back(std::string("Rename"));
+
+        if (!isItemRenameable())
+        {
+            disabled_items.push_back(std::string("Rename"));
+        }
+
+        hide_context_entries(menu, items, disabled_items);
+
+        menu.needsArrange();
+        menu.arrangeAndClear();
+    }
+
+    bool refreshCreatorName() const
+    {
+        std::string next_name;
+
+        if (mCreatorID.isNull())
+        {
+            next_name = "Unknown Creator";
+        }
+        else
+        {
+            LLAvatarName av_name;
+            if (LLAvatarNameCache::get(mCreatorID, &av_name))
+            {
+                next_name = av_name.getDisplayName();
+
+                if (next_name.empty())
+                {
+                    next_name = av_name.getUserName();
+                }
+            }
+
+            if (next_name.empty())
+            {
+                next_name = "Loading Creator...";
+            }
+        }
+
+        if (next_name == mCreatorName)
+        {
+            return false;
+        }
+
+        mCreatorName = next_name;
+        mSearchableName.clear();
+        updateDisplayName();
+        return true;
+    }
+
+    bool setItemCount(S32 item_count) const
+    {
+        if (item_count == mItemCount)
+        {
+            return false;
+        }
+
+        mItemCount = item_count;
+        updateDisplayName();
+        return true;
+    }
+
+private:
+    void updateDisplayName() const
+    {
+        mBaseName =
+            mStoreAlias.empty() ? mCreatorName : mStoreAlias;
+
+        mDisplayName = mBaseName;
+        mDisplayName += " (";
+        mDisplayName += std::to_string(mItemCount);
+        mDisplayName += ")";
+    }
+
+    void loadStoreAlias() const
+    {
+        mStoreAlias.clear();
+
+        if (mCreatorID.isNull())
+        {
+            return;
+        }
+
+        const std::string saved =
+            gSavedSettings.getString("CreatorViewStoreAliases");
+
+        const std::string wanted = mCreatorID.asString() + "|";
+        std::string::size_type start = 0;
+
+        while (start < saved.size())
+        {
+            std::string::size_type end = saved.find('\n', start);
+            std::string line = saved.substr(
+                start,
+                (end == std::string::npos)
+                    ? std::string::npos
+                    : end - start);
+
+            if (line.compare(0, wanted.size(), wanted) == 0)
+            {
+                mStoreAlias = line.substr(wanted.size());
+                return;
+            }
+
+            if (end == std::string::npos)
+            {
+                break;
+            }
+
+            start = end + 1;
+        }
+    }
+
+    void saveStoreAlias() const
+    {
+        if (mCreatorID.isNull())
+        {
+            return;
+        }
+
+        const std::string saved =
+            gSavedSettings.getString("CreatorViewStoreAliases");
+
+        const std::string wanted = mCreatorID.asString() + "|";
+        std::string rebuilt;
+        std::string::size_type start = 0;
+
+        while (start < saved.size())
+        {
+            std::string::size_type end = saved.find('\n', start);
+            std::string line = saved.substr(
+                start,
+                (end == std::string::npos)
+                    ? std::string::npos
+                    : end - start);
+
+            if (!line.empty()
+                && line.compare(0, wanted.size(), wanted) != 0)
+            {
+                if (!rebuilt.empty())
+                {
+                    rebuilt += "\n";
+                }
+                rebuilt += line;
+            }
+
+            if (end == std::string::npos)
+            {
+                break;
+            }
+
+            start = end + 1;
+        }
+
+        if (!rebuilt.empty())
+        {
+            rebuilt += "\n";
+        }
+
+        rebuilt += wanted;
+        rebuilt += mStoreAlias;
+
+        gSavedSettings.setString("CreatorViewStoreAliases", rebuilt);
+    }
+
+private:
+    LLUUID mCreatorID;
+    mutable std::string mCreatorName;
+    mutable std::string mStoreAlias;
+    mutable std::string mBaseName;
+    mutable std::string mDisplayName;
+    mutable S32 mItemCount;
+};
+
+
+class LLCreatorTypeVirtualFolderBridge final : public LLFolderBridge
+{
+public:
+    LLCreatorTypeVirtualFolderBridge(
+        LLInventoryPanel* inventory,
+        LLFolderView* root,
+        const LLUUID& group_id,
+        const std::string& label)
+        : LLFolderBridge(inventory, root, group_id),
+          mLabel(label),
+          mDisplayName(label),
+          mItemCount(0)
+    {
+        updateDisplayName();
+    }
+
+    const std::string& getName() const override { return mDisplayName; }
+    const std::string& getDisplayName() const override { return mDisplayName; }
+
+    void buildSearchableName() const override
+    {
+        mSearchableName = mLabel;
+        LLStringUtil::toUpper(mSearchableName);
+    }
+
+    LLFolderType::EType getPreferredType() const override
+    {
+        return LLFolderType::FT_NONE;
+    }
+
+    bool hasChildren() const override { return true; }
+    bool isUpToDate() const override { return true; }
+    bool isItemRenameable() const override { return false; }
+    bool renameItem(const std::string&) override { return false; }
+    bool removeItem() override { return false; }
+    bool isItemRemovable(bool = true) const override { return false; }
+    bool isItemMovable() const override { return false; }
+    bool isItemCopyable(bool = true) const override { return false; }
+    bool copyToClipboard() const override { return false; }
+    bool cutToClipboard() override { return false; }
+    bool isClipboardPasteable() const override { return false; }
+    bool isClipboardPasteableAsLink() const override { return false; }
+    void pasteFromClipboard() override {}
+    void pasteLinkFromClipboard() override {}
+
+    bool startDrag(EDragAndDropType* type, LLUUID* id) const override
+    {
+        if (type) *type = DAD_NONE;
+        if (id) *id = LLUUID::null;
+        return false;
+    }
+
+    bool dragOrDrop(MASK, bool, EDragAndDropType, void*, std::string&) override
+    {
+        return false;
+    }
+
+    void openItem() override {}
+    void closeItem() override {}
+    void selectItem() override {}
+    void showProperties() override {}
+
+    bool setItemCount(S32 item_count) const
+    {
+        if (item_count == mItemCount)
+        {
+            return false;
+        }
+
+        mItemCount = item_count;
+        updateDisplayName();
+        return true;
+    }
+
+private:
+    void updateDisplayName() const
+    {
+        mDisplayName = mLabel;
+        mDisplayName += " (";
+        mDisplayName += std::to_string(mItemCount);
+        mDisplayName += ")";
+    }
+
+private:
+    std::string mLabel;
+    mutable std::string mDisplayName;
+    mutable S32 mItemCount;
+};
+
+
+class LLInventoryCreatorItemsPanel : public LLInventoryPanel
+{
+public:
+    struct Params : public LLInitParam::Block<Params, LLInventoryPanel::Params>
+    {};
+
+    void initFromParams(const Params& p)
+    {
+        LLInventoryPanel::initFromParams(p);
+
+        getFilter().setFilterNoTrashFolder();
+        getFilter().setFilterNoMarketplaceFolder();
+        getFilter().setFilterLinks(LLInventoryFilter::FILTERLINK_EXCLUDE_LINKS);
+
+        loadOpenState();
+        loadTypeOpenState();
+        loadClassificationOverrides();
+    }
+
+    bool showCreatorNamesInLabels() const override
+    {
+        return false;
+    }
+
+    void draw() override
+    {
+        bool creator_view_changed = false;
+        bool open_state_changed = false;
+        bool type_open_state_changed = false;
+
+        for (auto& creator_entry : mCreatorFolders)
+        {
+            const LLUUID creator_id = creator_entry.first;
+            LLFolderViewFolder* creator_folder = creator_entry.second;
+
+            if (!creator_folder)
+            {
+                continue;
+            }
+
+            S32 total_items = 0;
+
+            auto type_map_it = mTypeFolders.find(creator_id);
+            if (type_map_it != mTypeFolders.end())
+            {
+                for (auto& type_entry : type_map_it->second)
+                {
+                    LLFolderViewFolder* type_folder = type_entry.second;
+                    if (!type_folder)
+                    {
+                        continue;
+                    }
+
+                    const S32 type_count =
+                        static_cast<S32>(type_folder->getItemsCount());
+
+                    total_items += type_count;
+
+                    LLCreatorTypeVirtualFolderBridge* type_bridge =
+                        dynamic_cast<LLCreatorTypeVirtualFolderBridge*>(
+                            type_folder->getViewModelItem());
+
+                    if (type_bridge && type_bridge->setItemCount(type_count))
+                    {
+                        type_folder->refresh();
+                        type_folder->getViewModelItem()->dirtyFilter();
+                        type_folder->getViewModelItem()->requestSort();
+                        creator_view_changed = true;
+                    }
+                    const std::string type_state_key =
+                        typeStateKey(creator_id, type_entry.first);
+
+                    const bool type_is_open = type_folder->isOpen();
+                    const bool type_was_open =
+                        (mOpenTypeFolderKeys.find(type_state_key)
+                            != mOpenTypeFolderKeys.end());
+
+                    if (type_is_open != type_was_open)
+                    {
+                        if (type_is_open)
+                        {
+                            mOpenTypeFolderKeys.insert(type_state_key);
+                        }
+                        else
+                        {
+                            mOpenTypeFolderKeys.erase(type_state_key);
+                        }
+
+                        type_open_state_changed = true;
+                    }
+                }
+            }
+
+            LLCreatorVirtualFolderBridge* creator_bridge =
+                dynamic_cast<LLCreatorVirtualFolderBridge*>(
+                    creator_folder->getViewModelItem());
+
+            if (creator_bridge)
+            {
+                if (creator_bridge->refreshCreatorName()
+                    || creator_bridge->setItemCount(total_items))
+                {
+                    creator_folder->refresh();
+                    creator_folder->getViewModelItem()->dirtyFilter();
+                    creator_folder->getViewModelItem()->requestSort();
+                    creator_view_changed = true;
+                }
+            }
+
+            const LLUUID group_id = groupIDForCreator(creator_id);
+            const bool is_open = creator_folder->isOpen();
+            const bool was_open =
+                (mOpenCreatorIDs.find(group_id) != mOpenCreatorIDs.end());
+
+            if (is_open != was_open)
+            {
+                if (is_open)
+                {
+                    mOpenCreatorIDs.insert(group_id);
+                }
+                else
+                {
+                    mOpenCreatorIDs.erase(group_id);
+                }
+
+                open_state_changed = true;
+            }
+        }
+
+        if (creator_view_changed && mFolderRoot.get())
+        {
+            if (mFolderRoot.get()->getViewModelItem())
+            {
+                mFolderRoot.get()->getViewModelItem()->requestSort();
+            }
+
+            mFolderRoot.get()->requestArrange();
+        }
+
+        if (open_state_changed)
+        {
+            saveOpenState();
+        }
+
+        if (type_open_state_changed)
+        {
+            saveTypeOpenState();
+        }
+
+        LLInventoryPanel::draw();
+    }
+
+    void doToSelected(const LLSD& userdata)
+    {
+        const std::string action = userdata.asString();
+
+        if (action.find("creator_classify_") == 0)
+        {
+            applyClassificationAction(action);
+            return;
+        }
+
+        LLInventoryPanel::doToSelected(userdata);
+    }
+
+protected:
+    enum ECreatorItemGroup
+    {
+        CREATOR_GROUP_SHIRTS_TOPS = 0,
+        CREATOR_GROUP_PANTS_BOTTOMS,
+        CREATOR_GROUP_SHOES_FOOTWEAR,
+        CREATOR_GROUP_JACKETS_OUTERWEAR,
+        CREATOR_GROUP_SOCKS_HOSIERY,
+        CREATOR_GROUP_GLOVES,
+        CREATOR_GROUP_SKIRTS,
+        CREATOR_GROUP_DRESSES_OUTFITS,
+        CREATOR_GROUP_UNDERWEAR,
+        CREATOR_GROUP_HAIR,
+        CREATOR_GROUP_BODY_PARTS,
+        CREATOR_GROUP_BODY_LAYERS,
+        CREATOR_GROUP_ACCESSORIES,
+        CREATOR_GROUP_OTHER_WEARABLES
+    };
+
+    LLInventoryCreatorItemsPanel(const Params& params)
+        : LLInventoryPanel(params)
+    {
+        mCommitCallbackRegistrar.replace(
+            "Inventory.DoToSelected",
+            boost::bind(
+                &LLInventoryCreatorItemsPanel::doToSelected,
+                this,
+                _2));
+    }
+
+    friend class LLUICtrlFactory;
+
+    bool containsAny(
+        const std::string& text,
+        std::initializer_list<const char*> words) const
+    {
+        for (const char* word : words)
+        {
+            if (text.find(word) != std::string::npos)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    std::string normalizedItemName(
+        const LLViewerInventoryItem* item) const
+    {
+        if (!item)
+        {
+            return std::string();
+        }
+
+        std::string result = " " + item->getName() + " ";
+        LLStringUtil::toLower(result);
+        return result;
+    }
+
+    std::string normalizedParentPath(
+        const LLViewerInventoryItem* item) const
+    {
+        if (!item)
+        {
+            return std::string();
+        }
+
+        std::string result;
+        LLUUID parent_id = item->getParentUUID();
+
+        for (S32 depth = 0; depth < 6 && parent_id.notNull(); ++depth)
+        {
+            LLViewerInventoryCategory* category =
+                mInventory->getCategory(parent_id);
+
+            if (!category)
+            {
+                break;
+            }
+
+            result += " ";
+            result += category->getName();
+            result += " ";
+
+            const LLUUID next_parent = category->getParentUUID();
+
+            if (next_parent == parent_id
+                || parent_id == mInventory->getRootFolderID())
+            {
+                break;
+            }
+
+            parent_id = next_parent;
+        }
+
+        LLStringUtil::toLower(result);
+        return result;
+    }
+
+    S32 groupFromWearableType(
+        LLWearableType::EType wearable_type) const
+    {
+        switch (wearable_type)
+        {
+            case LLWearableType::WT_SHIRT:
+                return CREATOR_GROUP_SHIRTS_TOPS;
+            case LLWearableType::WT_PANTS:
+                return CREATOR_GROUP_PANTS_BOTTOMS;
+            case LLWearableType::WT_SHOES:
+                return CREATOR_GROUP_SHOES_FOOTWEAR;
+            case LLWearableType::WT_SOCKS:
+                return CREATOR_GROUP_SOCKS_HOSIERY;
+            case LLWearableType::WT_JACKET:
+                return CREATOR_GROUP_JACKETS_OUTERWEAR;
+            case LLWearableType::WT_GLOVES:
+                return CREATOR_GROUP_GLOVES;
+            case LLWearableType::WT_SKIRT:
+                return CREATOR_GROUP_SKIRTS;
+            case LLWearableType::WT_UNDERSHIRT:
+            case LLWearableType::WT_UNDERPANTS:
+                return CREATOR_GROUP_UNDERWEAR;
+            case LLWearableType::WT_HAIR:
+                return CREATOR_GROUP_HAIR;
+            case LLWearableType::WT_SHAPE:
+            case LLWearableType::WT_SKIN:
+            case LLWearableType::WT_EYES:
+                return CREATOR_GROUP_BODY_PARTS;
+            case LLWearableType::WT_ALPHA:
+            case LLWearableType::WT_TATTOO:
+            case LLWearableType::WT_PHYSICS:
+            case LLWearableType::WT_UNIVERSAL:
+                return CREATOR_GROUP_BODY_LAYERS;
+            default:
+                return CREATOR_GROUP_OTHER_WEARABLES;
+        }
+    }
+
+    S32 groupFromObjectText(
+        const std::string& text,
+        bool allow_generic_outfit_word) const
+    {
+        if (containsAny(text, {" hud ", " applier ", " controller "}))
+            return CREATOR_GROUP_ACCESSORIES;
+
+        if (containsAny(text, {
+            " shirt ", " shirts ", " top ", " tops ", " tee ", " tees ",
+            " t-shirt ", " tshirt ", " blouse ", " blouses ", " tank ",
+            " tanktop ", " tank top ", " crop top ", " sweater ",
+            " sweatshirt ", " tunic ", " polo "
+        }))
+            return CREATOR_GROUP_SHIRTS_TOPS;
+
+        if (containsAny(text, {
+            " pants ", " pant ", " jeans ", " jean ", " trousers ",
+            " trouser ", " leggings ", " legging ", " shorts ", " short ",
+            " joggers ", " jogger ", " slacks ", " bottoms ", " bottom "
+        }))
+            return CREATOR_GROUP_PANTS_BOTTOMS;
+
+        if (containsAny(text, {
+            " shoes ", " shoe ", " heels ", " heel ", " boots ", " boot ",
+            " sneakers ", " sneaker ", " sandals ", " sandal ", " pumps ",
+            " pump ", " loafers ", " loafer ", " slippers ", " slipper ",
+            " footwear "
+        }))
+            return CREATOR_GROUP_SHOES_FOOTWEAR;
+
+        if (containsAny(text, {
+            " jacket ", " jackets ", " coat ", " coats ", " blazer ",
+            " blazers ", " hoodie ", " hoodies ", " cardigan ",
+            " cardigans ", " parka ", " parkas ", " outerwear ",
+            " overcoat ", " trench ", " bolero "
+        }))
+            return CREATOR_GROUP_JACKETS_OUTERWEAR;
+
+        if (containsAny(text, {
+            " socks ", " sock ", " stockings ", " stocking ",
+            " hosiery ", " tights ", " thigh highs ", " thigh-highs "
+        }))
+            return CREATOR_GROUP_SOCKS_HOSIERY;
+
+        if (containsAny(text, {
+            " gloves ", " glove ", " mittens ", " mitten ",
+            " gauntlets ", " gauntlet "
+        }))
+            return CREATOR_GROUP_GLOVES;
+
+        if (containsAny(text, {
+            " skirt ", " skirts ", " miniskirt ", " mini skirt "
+        }))
+            return CREATOR_GROUP_SKIRTS;
+
+        if (containsAny(text, {
+            " dress ", " dresses ", " gown ", " gowns ", " romper ",
+            " rompers ", " jumpsuit ", " jumpsuits ", " catsuit ",
+            " catsuits ", " bodysuit ", " bodysuits "
+        }))
+            return CREATOR_GROUP_DRESSES_OUTFITS;
+
+        if (allow_generic_outfit_word
+            && containsAny(text, {" outfit ", " outfits ", " ensemble "}))
+            return CREATOR_GROUP_DRESSES_OUTFITS;
+
+        if (containsAny(text, {
+            " underwear ", " lingerie ", " bra ", " bras ", " panties ",
+            " panty ", " thong ", " thongs ", " briefs ", " brief ",
+            " boxers ", " boxer ", " underpants ", " undershirt ",
+            " lingerie set "
+        }))
+            return CREATOR_GROUP_UNDERWEAR;
+
+        if (containsAny(text, {
+            " hair ", " hairs ", " wig ", " wigs ", " ponytail ",
+            " ponytails ", " braid ", " braids ", " bun ", " buns ",
+            " bangs ", " bang "
+        }))
+            return CREATOR_GROUP_HAIR;
+
+        if (containsAny(text, {
+            " body ", " bodies ", " mesh body ", " head ", " heads ",
+            " mesh head ", " hands ", " hand ", " feet ", " foot ",
+            " eyes ", " eye "
+        }))
+            return CREATOR_GROUP_BODY_PARTS;
+
+        if (containsAny(text, {
+            " tattoo ", " tattoos ", " alpha layer ", " bom layer ",
+            " universal layer ", " body layer ", " skin layer "
+        }))
+            return CREATOR_GROUP_BODY_LAYERS;
+
+        if (containsAny(text, {
+            " necklace ", " necklaces ", " earring ", " earrings ",
+            " bracelet ", " bracelets ", " ring ", " rings ", " choker ",
+            " chokers ", " glasses ", " sunglasses ", " hat ", " hats ",
+            " cap ", " caps ", " beanie ", " scarf ", " scarves ",
+            " belt ", " belts ", " harness ", " harnesses ", " bag ",
+            " bags ", " purse ", " purses ", " backpack ", " backpacks ",
+            " mask ", " masks ", " watch ", " watches ", " collar ",
+            " collars ", " nails ", " nail ", " piercing ", " piercings ",
+            " horns ", " horn ", " wings ", " wing ", " tail ", " tails ",
+            " accessory ", " accessories "
+        }))
+            return CREATOR_GROUP_ACCESSORIES;
+
+        return -1;
+    }
+
+    S32 automaticGroupForItem(
+        const LLViewerInventoryItem* item) const
+    {
+        if (!item)
+        {
+            return -1;
+        }
+
+        if (item->getType() == LLAssetType::AT_CLOTHING
+            || item->getType() == LLAssetType::AT_BODYPART)
+        {
+            return groupFromWearableType(item->getWearableType());
+        }
+
+        if (item->getType() != LLAssetType::AT_OBJECT)
+        {
+            return -1;
+        }
+
+        const std::string item_name = normalizedItemName(item);
+
+        S32 group = groupFromObjectText(item_name, true);
+        if (group >= 0)
+        {
+            return group;
+        }
+
+        const std::string parent_path = normalizedParentPath(item);
+
+        group = groupFromObjectText(parent_path, false);
+        if (group >= 0)
+        {
+            return group;
+        }
+
+        if (item->getInventoryType() == LLInventoryType::IT_ATTACHMENT)
+        {
+            return CREATOR_GROUP_OTHER_WEARABLES;
+        }
+
+        return -1;
+    }
+
+    S32 creatorGroupForItem(
+        const LLViewerInventoryItem* item) const
+    {
+        if (!item)
+        {
+            return -1;
+        }
+
+        auto override_it =
+            mClassificationOverrides.find(item->getUUID());
+
+        if (override_it != mClassificationOverrides.end())
+        {
+            return override_it->second;
+        }
+
+        return automaticGroupForItem(item);
+    }
+
+    S32 groupFromClassificationAction(
+        const std::string& action) const
+    {
+        if (action == "creator_classify_shirts")
+            return CREATOR_GROUP_SHIRTS_TOPS;
+        if (action == "creator_classify_pants")
+            return CREATOR_GROUP_PANTS_BOTTOMS;
+        if (action == "creator_classify_shoes")
+            return CREATOR_GROUP_SHOES_FOOTWEAR;
+        if (action == "creator_classify_jackets")
+            return CREATOR_GROUP_JACKETS_OUTERWEAR;
+        if (action == "creator_classify_socks")
+            return CREATOR_GROUP_SOCKS_HOSIERY;
+        if (action == "creator_classify_gloves")
+            return CREATOR_GROUP_GLOVES;
+        if (action == "creator_classify_skirts")
+            return CREATOR_GROUP_SKIRTS;
+        if (action == "creator_classify_dresses")
+            return CREATOR_GROUP_DRESSES_OUTFITS;
+        if (action == "creator_classify_underwear")
+            return CREATOR_GROUP_UNDERWEAR;
+        if (action == "creator_classify_hair")
+            return CREATOR_GROUP_HAIR;
+        if (action == "creator_classify_body_parts")
+            return CREATOR_GROUP_BODY_PARTS;
+        if (action == "creator_classify_body_layers")
+            return CREATOR_GROUP_BODY_LAYERS;
+        if (action == "creator_classify_accessories")
+            return CREATOR_GROUP_ACCESSORIES;
+        if (action == "creator_classify_other")
+            return CREATOR_GROUP_OTHER_WEARABLES;
+
+        return -1;
+    }
+
+    std::string creatorGroupLabel(S32 group) const
+    {
+        switch (group)
+        {
+            case CREATOR_GROUP_SHIRTS_TOPS:
+                return "Shirts / Tops";
+            case CREATOR_GROUP_PANTS_BOTTOMS:
+                return "Pants / Bottoms";
+            case CREATOR_GROUP_SHOES_FOOTWEAR:
+                return "Shoes / Footwear";
+            case CREATOR_GROUP_JACKETS_OUTERWEAR:
+                return "Jackets / Outerwear";
+            case CREATOR_GROUP_SOCKS_HOSIERY:
+                return "Socks / Hosiery";
+            case CREATOR_GROUP_GLOVES:
+                return "Gloves";
+            case CREATOR_GROUP_SKIRTS:
+                return "Skirts";
+            case CREATOR_GROUP_DRESSES_OUTFITS:
+                return "Dresses / Full Outfits";
+            case CREATOR_GROUP_UNDERWEAR:
+                return "Underwear / Lingerie";
+            case CREATOR_GROUP_HAIR:
+                return "Hair";
+            case CREATOR_GROUP_BODY_PARTS:
+                return "Body Parts";
+            case CREATOR_GROUP_BODY_LAYERS:
+                return "Body Layers";
+            case CREATOR_GROUP_ACCESSORIES:
+                return "Accessories";
+            case CREATOR_GROUP_OTHER_WEARABLES:
+                return "Other Wearables";
+            default:
+                return "Other Wearables";
+        }
+    }
+
+    bool shouldInclude(const LLInventoryObject* object)
+    {
+        const LLViewerInventoryItem* item =
+            dynamic_cast<const LLViewerInventoryItem*>(object);
+
+        if (!item || item->getIsLinkType())
+        {
+            return false;
+        }
+
+        if (creatorGroupForItem(item) < 0)
+        {
+            return false;
+        }
+
+        const LLUUID trash_id =
+            mInventory->findCategoryUUIDForType(LLFolderType::FT_TRASH);
+
+        if (trash_id.notNull()
+            && (item->getParentUUID() == trash_id
+                || mInventory->isObjectDescendentOf(
+                    item->getUUID(), trash_id)))
+        {
+            return false;
+        }
+
+        const LLUUID marketplace_id =
+            mInventory->getMarketplaceListingsUUID();
+
+        if (marketplace_id.notNull()
+            && (item->getParentUUID() == marketplace_id
+                || mInventory->isObjectDescendentOf(
+                    item->getUUID(), marketplace_id)))
+        {
+            return false;
+        }
+
+        return typedViewsFilter(item->getUUID(), item);
+    }
+
+    void loadClassificationOverrides()
+    {
+        mClassificationOverrides.clear();
+
+        const std::string saved =
+            gSavedSettings.getString("CreatorViewItemClassifications");
+
+        std::string::size_type start = 0;
+
+        while (start < saved.size())
+        {
+            const std::string::size_type end =
+                saved.find('\n', start);
+
+            const std::string line =
+                saved.substr(
+                    start,
+                    (end == std::string::npos)
+                        ? std::string::npos
+                        : end - start);
+
+            const std::string::size_type split = line.find('|');
+
+            if (split != std::string::npos)
+            {
+                const std::string id_text = line.substr(0, split);
+                const std::string group_text = line.substr(split + 1);
+
+                LLUUID item_id(id_text);
+
+                if (item_id.notNull())
+                {
+                    const S32 group = atoi(group_text.c_str());
+
+                    if (group >= CREATOR_GROUP_SHIRTS_TOPS
+                        && group <= CREATOR_GROUP_OTHER_WEARABLES)
+                    {
+                        mClassificationOverrides[item_id] = group;
+                    }
+                }
+            }
+
+            if (end == std::string::npos)
+            {
+                break;
+            }
+
+            start = end + 1;
+        }
+    }
+
+    void saveClassificationOverrides() const
+    {
+        std::string saved;
+        bool first = true;
+
+        for (const auto& entry : mClassificationOverrides)
+        {
+            if (!first)
+            {
+                saved += "\n";
+            }
+
+            saved += entry.first.asString();
+            saved += "|";
+            saved += std::to_string(entry.second);
+            first = false;
+        }
+
+        gSavedSettings.setString(
+            "CreatorViewItemClassifications",
+            saved);
+    }
+
+    void applyClassificationAction(const std::string& action)
+    {
+        if (!mFolderRoot.get())
+        {
+            return;
+        }
+
+        const bool use_auto =
+            (action == "creator_classify_auto");
+
+        const S32 requested_group =
+            use_auto ? -1 : groupFromClassificationAction(action);
+
+        if (!use_auto && requested_group < 0)
+        {
+            return;
+        }
+
+        std::vector<LLUUID> selected_ids;
+
+        const std::set<LLFolderViewItem*> selection =
+            mFolderRoot.get()->getSelectionList();
+
+        for (LLFolderViewItem* selected : selection)
+        {
+            if (!selected || !selected->getViewModelItem())
+            {
+                continue;
+            }
+
+            LLFolderViewModelItemInventory* vm_item =
+                dynamic_cast<LLFolderViewModelItemInventory*>(
+                    selected->getViewModelItem());
+
+            if (!vm_item)
+            {
+                continue;
+            }
+
+            const LLUUID item_id = vm_item->getUUID();
+
+            if (gInventory.getItem(item_id))
+            {
+                selected_ids.push_back(item_id);
+            }
+        }
+
+        for (const LLUUID& item_id : selected_ids)
+        {
+            LLViewerInventoryItem* item =
+                gInventory.getItem(item_id);
+
+            if (!item)
+            {
+                continue;
+            }
+
+            if (use_auto)
+            {
+                mClassificationOverrides.erase(item_id);
+            }
+            else
+            {
+                mClassificationOverrides[item_id] = requested_group;
+            }
+
+            LLFolderViewItem* view_item =
+                getItemByID(item_id);
+
+            const S32 resolved_group =
+                creatorGroupForItem(item);
+
+            if (resolved_group < 0)
+            {
+                if (view_item)
+                {
+                    removeItemID(item_id);
+                    view_item->destroyView();
+                }
+                continue;
+            }
+
+            const LLUUID creator_id =
+                item->getPermissions().getCreator();
+
+            LLFolderViewFolder* creator_folder =
+                ensureCreatorFolder(creator_id);
+
+            LLFolderViewFolder* type_folder =
+                ensureTypeFolder(
+                    creator_id,
+                    resolved_group,
+                    creator_folder);
+
+            if (!type_folder)
+            {
+                continue;
+            }
+
+            if (!view_item)
+            {
+                buildViewsTree(
+                    item_id,
+                    item->getParentUUID(),
+                    item,
+                    nullptr,
+                    type_folder,
+                    BUILD_ONE_FOLDER);
+
+                view_item = getItemByID(item_id);
+            }
+
+            if (view_item)
+            {
+                if (view_item->getParentFolder() != type_folder)
+                {
+                    view_item->addToFolder(type_folder);
+                }
+
+                view_item->refresh();
+
+                if (view_item->getViewModelItem())
+                {
+                    view_item->getViewModelItem()->dirtyFilter();
+                    view_item->getViewModelItem()->requestSort();
+                }
+
+                type_folder->requestArrange();
+
+                if (creator_folder)
+                {
+                    creator_folder->requestArrange();
+                }
+            }
+        }
+
+        saveClassificationOverrides();
+
+        if (mFolderRoot.get())
+        {
+            mFolderRoot.get()->requestArrange();
+        }
+    }
+
+    LLUUID groupIDForCreator(const LLUUID& creator_id) const
+    {
+        if (creator_id.notNull())
+        {
+            return creator_id;
+        }
+
+        static const LLUUID unknown_creator_group_id(
+            "f3bca0c1-6f3d-4da4-9dc0-5a4130c7e901");
+
+        return unknown_creator_group_id;
+    }
+
+    std::string typeStateKey(
+        const LLUUID& creator_id,
+        S32 group) const
+    {
+        return creator_id.asString()
+            + "|"
+            + std::to_string(group);
+    }
+
+    void loadTypeOpenState()
+    {
+        mOpenTypeFolderKeys.clear();
+
+        const std::string saved =
+            gSavedSettings.getString("CreatorViewOpenTypeFolders");
+
+        std::string::size_type start = 0;
+
+        while (start < saved.size())
+        {
+            const std::string::size_type end =
+                saved.find('\n', start);
+
+            const std::string key =
+                saved.substr(
+                    start,
+                    (end == std::string::npos)
+                        ? std::string::npos
+                        : end - start);
+
+            if (!key.empty())
+            {
+                mOpenTypeFolderKeys.insert(key);
+            }
+
+            if (end == std::string::npos)
+            {
+                break;
+            }
+
+            start = end + 1;
+        }
+    }
+
+    void saveTypeOpenState() const
+    {
+        std::string saved;
+        bool first = true;
+
+        for (const std::string& key : mOpenTypeFolderKeys)
+        {
+            if (!first)
+            {
+                saved += "\n";
+            }
+
+            saved += key;
+            first = false;
+        }
+
+        gSavedSettings.setString(
+            "CreatorViewOpenTypeFolders",
+            saved);
+    }
+    void loadOpenState()
+    {
+        mOpenCreatorIDs.clear();
+
+        const std::string saved =
+            gSavedSettings.getString("CreatorViewOpenCreatorFolders");
+
+        std::string::size_type start = 0;
+
+        while (start < saved.size())
+        {
+            const std::string::size_type end =
+                saved.find(';', start);
+
+            const std::string token =
+                saved.substr(
+                    start,
+                    (end == std::string::npos)
+                        ? std::string::npos
+                        : end - start);
+
+            if (!token.empty())
+            {
+                LLUUID id(token);
+                if (id.notNull())
+                {
+                    mOpenCreatorIDs.insert(id);
+                }
+            }
+
+            if (end == std::string::npos)
+            {
+                break;
+            }
+
+            start = end + 1;
+        }
+    }
+
+    void saveOpenState() const
+    {
+        std::string saved;
+        bool first = true;
+
+        for (const LLUUID& id : mOpenCreatorIDs)
+        {
+            if (!first)
+            {
+                saved += ";";
+            }
+
+            saved += id.asString();
+            first = false;
+        }
+
+        gSavedSettings.setString(
+            "CreatorViewOpenCreatorFolders",
+            saved);
+    }
+
+    LLFolderViewFolder* ensureCreatorFolder(const LLUUID& creator_id)
+    {
+        auto found = mCreatorFolders.find(creator_id);
+        if (found != mCreatorFolders.end() && found->second)
+        {
+            return found->second;
+        }
+
+        if (!mFolderRoot.get())
+        {
+            return nullptr;
+        }
+
+        const LLUUID group_id = groupIDForCreator(creator_id);
+
+        if (LLFolderViewFolder* existing = getFolderByID(group_id))
+        {
+            mCreatorFolders[creator_id] = existing;
+            return existing;
+        }
+
+        LLCreatorVirtualFolderBridge* bridge =
+            new LLCreatorVirtualFolderBridge(
+                this,
+                mFolderRoot.get(),
+                group_id,
+                creator_id);
+
+        LLFolderViewFolder* folder =
+            createFolderViewFolder(bridge, false);
+
+        if (!folder)
+        {
+            delete bridge;
+            return nullptr;
+        }
+
+        folder->addToFolder(mFolderRoot.get());
+        folder->setChildrenInited(true);
+
+        const bool saved_open =
+            (mOpenCreatorIDs.find(group_id) != mOpenCreatorIDs.end());
+
+        folder->setOpen(saved_open);
+
+        addItemID(group_id, folder);
+        mCreatorFolders[creator_id] = folder;
+
+        return folder;
+    }
+
+    LLFolderViewFolder* ensureTypeFolder(
+        const LLUUID& creator_id,
+        S32 group,
+        LLFolderViewFolder* creator_folder)
+    {
+        if (!creator_folder || group < 0)
+        {
+            return nullptr;
+        }
+
+        auto creator_types = mTypeFolders.find(creator_id);
+        if (creator_types != mTypeFolders.end())
+        {
+            auto found = creator_types->second.find(group);
+            if (found != creator_types->second.end() && found->second)
+            {
+                return found->second;
+            }
+        }
+
+        const LLUUID type_group_id = LLUUID::generateNewID();
+
+        LLCreatorTypeVirtualFolderBridge* bridge =
+            new LLCreatorTypeVirtualFolderBridge(
+                this,
+                mFolderRoot.get(),
+                type_group_id,
+                creatorGroupLabel(group));
+
+        LLFolderViewFolder* folder =
+            createFolderViewFolder(bridge, false);
+
+        if (!folder)
+        {
+            delete bridge;
+            return nullptr;
+        }
+
+        folder->addToFolder(creator_folder);
+        folder->setChildrenInited(true);
+        const std::string type_state_key =
+            typeStateKey(creator_id, group);
+
+        const bool saved_open =
+            (mOpenTypeFolderKeys.find(type_state_key)
+                != mOpenTypeFolderKeys.end());
+
+        folder->setOpen(saved_open);
+
+        addItemID(type_group_id, folder);
+        mTypeFolders[creator_id][group] = folder;
+
+        return folder;
+    }
+
+    void findAndInitRootContent(const LLUUID& id) override
+    {
+        const F64 current_time = LLTimer::getTotalSeconds();
+
+        if (mBuildViewsEndTime < current_time)
+        {
+            mBuildRootQueue.emplace_back(id);
+            return;
+        }
+
+        LLViewerInventoryCategory::cat_array_t* categories = nullptr;
+        LLViewerInventoryItem::item_array_t* items = nullptr;
+
+        mInventory->lockDirectDescendentArrays(id, categories, items);
+
+        if (categories)
+        {
+            const LLUUID trash_id =
+                mInventory->findCategoryUUIDForType(LLFolderType::FT_TRASH);
+            const LLUUID marketplace_id =
+                mInventory->getMarketplaceListingsUUID();
+
+            for (LLViewerInventoryCategory* cat : *categories)
+            {
+                if (!cat)
+                {
+                    continue;
+                }
+
+                const LLUUID cat_id = cat->getUUID();
+
+                if (cat_id == trash_id
+                    || cat_id == marketplace_id
+                    || cat->getPreferredType() == LLFolderType::FT_TRASH)
+                {
+                    continue;
+                }
+
+                findAndInitRootContent(cat_id);
+            }
+        }
+
+        if (items)
+        {
+            for (LLViewerInventoryItem* item : *items)
+            {
+                if (!shouldInclude(item))
+                {
+                    continue;
+                }
+
+                const LLUUID item_id = item->getUUID();
+
+                if (getItemByID(item_id))
+                {
+                    continue;
+                }
+
+                const LLUUID creator_id =
+                    item->getPermissions().getCreator();
+
+                const S32 item_group =
+                    creatorGroupForItem(item);
+
+                LLFolderViewFolder* creator_folder =
+                    ensureCreatorFolder(creator_id);
+
+                LLFolderViewFolder* type_folder =
+                    ensureTypeFolder(
+                        creator_id,
+                        item_group,
+                        creator_folder);
+
+                if (!type_folder)
+                {
+                    continue;
+                }
+
+                buildViewsTree(
+                    item_id,
+                    item->getParentUUID(),
+                    item,
+                    nullptr,
+                    type_folder,
+                    BUILD_TIMELIMIT);
+            }
+        }
+
+        mInventory->unlockDirectDescendentArrays(id);
+    }
+
+    void initRootContent() override
+    {
+        findAndInitRootContent(gInventory.getRootFolderID());
+    }
+
+    void itemChanged(
+        const LLUUID& id,
+        U32,
+        const LLInventoryObject* model_item) override
+    {
+        LLFolderViewItem* view_item = getItemByID(id);
+
+        if (!model_item)
+        {
+            if (view_item)
+            {
+                removeItemID(id);
+                view_item->destroyView();
+            }
+            return;
+        }
+
+        const LLViewerInventoryItem* item =
+            dynamic_cast<const LLViewerInventoryItem*>(model_item);
+
+        if (!item)
+        {
+            return;
+        }
+
+        if (!shouldInclude(model_item))
+        {
+            if (view_item)
+            {
+                removeItemID(id);
+                view_item->destroyView();
+            }
+            return;
+        }
+
+        const LLUUID creator_id =
+            item->getPermissions().getCreator();
+
+        const S32 item_group =
+            creatorGroupForItem(item);
+
+        LLFolderViewFolder* creator_folder =
+            ensureCreatorFolder(creator_id);
+
+        LLFolderViewFolder* type_folder =
+            ensureTypeFolder(
+                creator_id,
+                item_group,
+                creator_folder);
+
+        if (!type_folder)
+        {
+            return;
+        }
+
+        if (!view_item)
+        {
+            buildViewsTree(
+                id,
+                item->getParentUUID(),
+                model_item,
+                nullptr,
+                type_folder,
+                BUILD_ONE_FOLDER);
+
+            view_item = getItemByID(id);
+        }
+
+        if (view_item)
+        {
+            if (view_item->getParentFolder() != type_folder)
+            {
+                view_item->addToFolder(type_folder);
+            }
+
+            view_item->refresh();
+
+            if (LLFolderViewModelItemInventory* vm_item =
+                    static_cast<LLFolderViewModelItemInventory*>(
+                        view_item->getViewModelItem()))
+            {
+                vm_item->requestSort();
+            }
+
+            if (type_folder->getViewModelItem())
+            {
+                type_folder->getViewModelItem()->requestSort();
+            }
+
+            if (creator_folder->getViewModelItem())
+            {
+                creator_folder->getViewModelItem()->requestSort();
+            }
+
+            type_folder->requestArrange();
+            creator_folder->requestArrange();
+        }
+    }
+
+private:
+    std::map<LLUUID, LLFolderViewFolder*> mCreatorFolders;
+    std::map<LLUUID, std::map<S32, LLFolderViewFolder*> > mTypeFolders;
+    std::set<LLUUID> mOpenCreatorIDs;
+    std::set<std::string> mOpenTypeFolderKeys;
+    std::map<LLUUID, S32> mClassificationOverrides;
+};
 /************************************************************************/
 /* Favorites Inventory Panel related class                              */
 /************************************************************************/

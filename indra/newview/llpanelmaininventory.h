@@ -200,6 +200,7 @@ private:
     LLInventoryPanel*           mRecentPanel = nullptr;
     LLInventoryPanel*           mWornItemsPanel = nullptr;
     LLInventoryPanel*           mFavoritesPanel = nullptr;
+    LLInventoryPanel*           mCreatorPanel = nullptr;
     bool                        mResortActivePanel;
     LLSaveFolderState*          mSavedFolderState;
     std::string                 mFilterText;

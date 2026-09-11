@@ -3,14 +3,19 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+
 <style>
-html,body {
+html,
+body {
     margin: 0;
     width: 100%;
     height: 100%;
     overflow: hidden;
     background: #03070f;
+    color: white;
+    font-family: Consolas, monospace;
 }
+
 video {
     position: fixed;
     inset: 0;
@@ -19,37 +24,427 @@ video {
     object-fit: cover;
     object-position: center center;
     background: #03070f;
-    pointer-events: none;
-    user-select: none;
+}
+
+#diag {
+    position: fixed;
+    left: 20px;
+    top: 20px;
+    z-index: 9999;
+    width: 760px;
+    max-height: 700px;
+    overflow: auto;
+
+    background: rgba(0, 0, 0, 0.88);
+    border: 2px solid white;
+    padding: 16px;
+
+    font-size: 18px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+}
+
+.good {
+    color: #6cff7a;
+}
+
+.bad {
+    color: #ff6c6c;
+}
+
+.info {
+    color: #7cc8ff;
 }
 </style>
 </head>
+
 <body>
-<video id="novaVideo" autoplay muted loop playsinline preload="auto" disablepictureinpicture>
-    <source src="nova_login_background.mp4" type="video/mp4">
+
+<video
+    id="novaVideo"
+    autoplay
+    muted
+    loop
+    playsinline
+    preload="auto"
+    disablepictureinpicture>
+
+    <source
+        src="nova_login_background.mp4"
+        type="video/mp4">
+
 </video>
+
+<div id="diag">
+NOVA VIDEO DIAGNOSTIC
+=====================
+Starting...
+</div>
+
 <script>
-(function () {
-    const video = document.getElementById('novaVideo');
+(function ()
+{
+    const video = document.getElementById("novaVideo");
+    const diag = document.getElementById("diag");
+
     video.muted = true;
     video.volume = 0;
     video.controls = false;
 
-    function startVideo() {
-        const promise = video.play();
-        if (promise && promise.catch) { promise.catch(function () {}); }
+    function write(message, type)
+    {
+        const line = document.createElement("div");
+
+        line.textContent = message;
+
+        if (type)
+        {
+            line.className = type;
+        }
+
+        diag.appendChild(line);
     }
 
-    video.addEventListener('canplay', startVideo);
-    video.addEventListener('ended', function () {
-        video.currentTime = 0;
-        startVideo();
-    });
-    document.addEventListener('visibilitychange', function () {
-        if (!document.hidden) { startVideo(); }
-    });
+    function clearStart()
+    {
+        diag.textContent =
+            "NOVA VIDEO DIAGNOSTIC\n" +
+            "=====================\n";
+    }
+
+    clearStart();
+
+    write("HTML loaded successfully", "good");
+
+    write(
+        "Page URL: " +
+        window.location.href,
+        "info"
+    );
+
+    write(
+        "Video source: " +
+        video.querySelector("source").src,
+        "info"
+    );
+
+    const mp4Support =
+        video.canPlayType("video/mp4");
+
+    const h264Support =
+        video.canPlayType(
+            'video/mp4; codecs="avc1.42E01E"'
+        );
+
+    const webmVP8Support =
+        video.canPlayType(
+            'video/webm; codecs="vp8"'
+        );
+
+    const webmVP9Support =
+        video.canPlayType(
+            'video/webm; codecs="vp9"'
+        );
+
+    write(
+        "MP4 support: [" +
+        mp4Support +
+        "]",
+        mp4Support ? "good" : "bad"
+    );
+
+    write(
+        "H.264 support: [" +
+        h264Support +
+        "]",
+        h264Support ? "good" : "bad"
+    );
+
+    write(
+        "WebM VP8 support: [" +
+        webmVP8Support +
+        "]",
+        webmVP8Support ? "good" : "bad"
+    );
+
+    write(
+        "WebM VP9 support: [" +
+        webmVP9Support +
+        "]",
+        webmVP9Support ? "good" : "bad"
+    );
+
+    write(
+        "Initial readyState: " +
+        video.readyState,
+        "info"
+    );
+
+    write(
+        "Initial networkState: " +
+        video.networkState,
+        "info"
+    );
+
+    function startVideo()
+    {
+        write(
+            "Calling video.play()...",
+            "info"
+        );
+
+        const promise = video.play();
+
+        if (promise)
+        {
+            promise
+                .then(function ()
+                {
+                    write(
+                        "PLAY SUCCESS",
+                        "good"
+                    );
+
+                    write(
+                        "Current source: " +
+                        video.currentSrc,
+                        "info"
+                    );
+                })
+                .catch(function (error)
+                {
+                    write(
+                        "PLAY FAILED",
+                        "bad"
+                    );
+
+                    write(
+                        "Error name: " +
+                        error.name,
+                        "bad"
+                    );
+
+                    write(
+                        "Error message: " +
+                        error.message,
+                        "bad"
+                    );
+                });
+        }
+    }
+
+    video.addEventListener(
+        "loadstart",
+        function ()
+        {
+            write(
+                "EVENT: loadstart",
+                "info"
+            );
+        }
+    );
+
+    video.addEventListener(
+        "durationchange",
+        function ()
+        {
+            write(
+                "EVENT: durationchange = " +
+                video.duration,
+                "info"
+            );
+        }
+    );
+
+    video.addEventListener(
+        "loadedmetadata",
+        function ()
+        {
+            write(
+                "EVENT: loadedmetadata",
+                "good"
+            );
+
+            write(
+                "Resolution: " +
+                video.videoWidth +
+                " x " +
+                video.videoHeight,
+                "good"
+            );
+
+            write(
+                "Duration: " +
+                video.duration,
+                "good"
+            );
+        }
+    );
+
+    video.addEventListener(
+        "loadeddata",
+        function ()
+        {
+            write(
+                "EVENT: loadeddata",
+                "good"
+            );
+        }
+    );
+
+    video.addEventListener(
+        "canplay",
+        function ()
+        {
+            write(
+                "EVENT: canplay",
+                "good"
+            );
+
+            startVideo();
+        }
+    );
+
+    video.addEventListener(
+        "canplaythrough",
+        function ()
+        {
+            write(
+                "EVENT: canplaythrough",
+                "good"
+            );
+        }
+    );
+
+    video.addEventListener(
+        "playing",
+        function ()
+        {
+            write(
+                "EVENT: playing",
+                "good"
+            );
+        }
+    );
+
+    video.addEventListener(
+        "waiting",
+        function ()
+        {
+            write(
+                "EVENT: waiting",
+                "info"
+            );
+        }
+    );
+
+    video.addEventListener(
+        "stalled",
+        function ()
+        {
+            write(
+                "EVENT: stalled",
+                "bad"
+            );
+        }
+    );
+
+    video.addEventListener(
+        "suspend",
+        function ()
+        {
+            write(
+                "EVENT: suspend",
+                "info"
+            );
+        }
+    );
+
+    video.addEventListener(
+        "abort",
+        function ()
+        {
+            write(
+                "EVENT: abort",
+                "bad"
+            );
+        }
+    );
+
+    video.addEventListener(
+        "emptied",
+        function ()
+        {
+            write(
+                "EVENT: emptied",
+                "bad"
+            );
+        }
+    );
+
+    video.addEventListener(
+        "error",
+        function ()
+        {
+            write(
+                "EVENT: VIDEO ERROR",
+                "bad"
+            );
+
+            if (video.error)
+            {
+                write(
+                    "MediaError code: " +
+                    video.error.code,
+                    "bad"
+                );
+
+                write(
+                    "MediaError message: " +
+                    video.error.message,
+                    "bad"
+                );
+            }
+            else
+            {
+                write(
+                    "No MediaError object returned",
+                    "bad"
+                );
+            }
+
+            write(
+                "readyState: " +
+                video.readyState,
+                "bad"
+            );
+
+            write(
+                "networkState: " +
+                video.networkState,
+                "bad"
+            );
+        }
+    );
+
+    video.addEventListener(
+        "ended",
+        function ()
+        {
+            write(
+                "EVENT: ended",
+                "info"
+            );
+
+            video.currentTime = 0;
+            startVideo();
+        }
+    );
+
     startVideo();
+
 })();
 </script>
+
 </body>
 </html>

@@ -24,13 +24,13 @@ LangString MUI_TEXT_DIRECTORY_TITLE ${LANG_GERMAN} "Installationsverzeichnis"
 LangString MUI_TEXT_DIRECTORY_SUBTITLE ${LANG_GERMAN} "Wählen Sie das Verzeichnis aus, in dem Second Life installiert werden soll:"
 
 LangString MUI_TEXT_INSTALLING_TITLE ${LANG_GERMAN} "Second Life wird installiert..."
-LangString MUI_TEXT_INSTALLING_SUBTITLE ${LANG_GERMAN} "Der Second Life Viewer wird im Verzeichnis $INSTDIR installiert"
+LangString MUI_TEXT_INSTALLING_SUBTITLE ${LANG_GERMAN} "Jackson Viewer wird im Verzeichnis $INSTDIR installiert"
 
 LangString MUI_TEXT_FINISH_TITLE ${LANG_GERMAN} "Second Life wird installiert"
-LangString MUI_TEXT_FINISH_SUBTITLE ${LANG_GERMAN} "Der Second Life Viewer wurde im Verzeichnis $INSTDIR installiert."
+LangString MUI_TEXT_FINISH_SUBTITLE ${LANG_GERMAN} "Jackson Viewer wurde im Verzeichnis $INSTDIR installiert."
 
 LangString MUI_TEXT_ABORT_TITLE ${LANG_GERMAN} "Installation abgebrochen"
-LangString MUI_TEXT_ABORT_SUBTITLE ${LANG_GERMAN} "Der Second Life Viewer wird nicht im Verzeichnis $INSTDIR installiert."
+LangString MUI_TEXT_ABORT_SUBTITLE ${LANG_GERMAN} "Jackson Viewer wird nicht im Verzeichnis $INSTDIR installiert."
 
 ; CheckStartupParams message box
 LangString CheckStartupParamsMB ${LANG_GERMAN} "Konnte Programm '$INSTNAME' nicht finden. Stilles Update fehlgeschlagen."
