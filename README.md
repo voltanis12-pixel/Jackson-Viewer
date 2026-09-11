@@ -1,4 +1,4 @@
-﻿# Jackson Viewer
+# Jackson Viewer
 
 Jackson Viewer is a third-party viewer for Second Life, built from the open-source Second Life Viewer codebase.
 
