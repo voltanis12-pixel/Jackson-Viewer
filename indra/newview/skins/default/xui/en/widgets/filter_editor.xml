@@ -5,6 +5,8 @@
   search_button_visible="false"
   text_pad_left="7"
   select_on_focus="true"
+  text_color="JacksonCream"
+  text_readonly_color="JacksonCreamDim"
   text_tentative_color="TextFgTentativeColor"
   highlight_text_field="true"
   background_image="TextField_Off"

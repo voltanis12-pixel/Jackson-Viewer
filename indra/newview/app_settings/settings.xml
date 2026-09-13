@@ -6415,6 +6415,17 @@
       <key>Value</key>
       <integer>1</integer>
     </map>
+    <key>PlayTypingSound</key>
+    <map>
+      <key>Comment</key>
+      <string>Your avatar plays the typing sound whenever you type in the chat bar</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>Boolean</string>
+      <key>Value</key>
+      <integer>1</integer>
+    </map>
     <key>PlaySoundIncomingVoiceCall</key>
     <map>
       <key>Comment</key>

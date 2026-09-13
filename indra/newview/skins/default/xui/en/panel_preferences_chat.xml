@@ -23,7 +23,7 @@
 
   <panel
       border="false"
-      height="60"
+      height="82"
       layout="topleft"
       name="general_chat_settings" 
       top="10"
@@ -38,6 +38,16 @@
         layout="topleft"
         top="0"
         name="play_typing_animation"
+        width="330">
+    </check_box>
+    <check_box
+        control_name="PlayTypingSound"
+        height="16"
+        initial_value="true"
+        label="Play my typing sound when chatting"
+        layout="topleft"
+        top_pad="6"
+        name="play_typing_sound"
         width="330">
     </check_box>
 

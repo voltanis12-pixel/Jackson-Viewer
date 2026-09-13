@@ -6161,9 +6161,13 @@ bool LLVOAvatar::processSingleAnimationStateChange( const LLUUID& anim_id, bool 
                     //}
                     //else
                     {
-                        static LLCachedControl<std::string> ui_snd_string(gSavedSettings, "UISndTyping");
-                        LLUUID sound_id = LLUUID(ui_snd_string);
-                        gAudiop->triggerSound(sound_id, getID(), 1.0f, LLAudioEngine::AUDIO_TYPE_SFX, char_pos_global);
+                        static LLCachedControl<bool> play_typing_sound(gSavedSettings, "PlayTypingSound");
+                        if (!isSelf() || play_typing_sound)
+                        {
+                            static LLCachedControl<std::string> ui_snd_string(gSavedSettings, "UISndTyping");
+                            LLUUID sound_id = LLUUID(ui_snd_string);
+                            gAudiop->triggerSound(sound_id, getID(), 1.0f, LLAudioEngine::AUDIO_TYPE_SFX, char_pos_global);
+                        }
                     }
                 }
             }

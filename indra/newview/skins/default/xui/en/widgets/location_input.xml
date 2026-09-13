@@ -155,7 +155,7 @@
 	      bg_writeable_color="MenuDefaultBgColor"
 	      page_lines="10"
               scroll_bar_bg_visible="true" />
-  <combo_editor name="Combo Text Entry"
+  <combo_editor name="Combo Text Entry" text_color="JacksonCream" text_readonly_color="JacksonCream" text_tentative_color="JacksonCreamDim"
                 text_pad_left="27"
                 select_on_focus="false"
                 font="SansSerifSmall"

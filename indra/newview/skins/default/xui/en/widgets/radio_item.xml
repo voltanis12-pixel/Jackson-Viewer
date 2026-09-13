@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <radio_item follows="left|top" font="SansSerif">
   <radio_item.label_text name="Radio Item label"/>
-  <radio_item.check_button name=Radio control button image_color=0.78 0.60 0.38 1 image_color_disabled=0.38 0.32 0.27 1"
+  <radio_item.check_button name="Radio control button"
+                          image_color="0.78 0.60 0.38 1"
+                          image_color_disabled="0.38 0.32 0.27 1"
                           image_unselected="RadioButton_Off"
                           image_selected="RadioButton_On"
                           image_disabled="RadioButton_Disabled"
