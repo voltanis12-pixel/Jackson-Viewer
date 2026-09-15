@@ -28,6 +28,7 @@
 #include "llinventorypanel.h"
 #include "llwearabletype.h"
 
+#include <algorithm>
 #include <utility> // for std::pair<>
 
 #include "llagent.h"
@@ -35,6 +36,7 @@
 #include "llappearancemgr.h"
 #include "llavataractions.h"
 #include "llavatarnamecache.h"
+#include "llavatarpropertiesprocessor.h"
 #include "llclipboard.h"
 #include "llfloaterreg.h"
 #include "llfloatersidepanelcontainer.h"
@@ -2320,7 +2322,17 @@ LLInventoryRecentItemsPanel::LLInventoryRecentItemsPanel( const Params& params)
 /* Creator Inventory Panel related classes                              */
 /************************************************************************/
 
-class LLCreatorVirtualFolderBridge final : public LLFolderBridge
+struct LLCreatorStoreNameCacheEntry
+{
+    std::string name;
+    S32 score = 0;
+};
+
+static std::map<LLUUID, LLCreatorStoreNameCacheEntry>
+    sCreatorStoreNameCache;
+class LLCreatorVirtualFolderBridge final
+    : public LLFolderBridge,
+      public LLAvatarPropertiesObserver
 {
 public:
     LLCreatorVirtualFolderBridge(
@@ -2332,13 +2344,160 @@ public:
           mCreatorID(creator_id),
           mCreatorName(),
           mStoreAlias(),
+          mAutoStoreName(),
+          mAutoStoreScore(0),
+          mStoreLookupRequested(false),
           mBaseName(),
           mDisplayName(),
           mItemCount(0)
     {
         loadStoreAlias();
-        refreshCreatorName();
+
+        if (mCreatorID.notNull())
+        {
+            auto cached = sCreatorStoreNameCache.find(mCreatorID);
+            if (cached != sCreatorStoreNameCache.end())
+            {
+                mAutoStoreName = cached->second.name;
+                mAutoStoreScore = cached->second.score;
+            }
+
+            LLAvatarPropertiesProcessor::getInstance()->addObserver(
+                mCreatorID,
+                this);
+        }
+
+        refreshCreatorName(false);
         updateDisplayName();
+    }
+
+    ~LLCreatorVirtualFolderBridge() override
+    {
+        if (mCreatorID.notNull())
+        {
+            LLAvatarPropertiesProcessor::getInstance()->removeObserver(
+                mCreatorID,
+                this);
+        }
+    }
+
+    void processProperties(
+        void* data,
+        EAvatarProcessorType type) override
+    {
+        if (!data || mCreatorID.isNull())
+        {
+            return;
+        }
+
+        LLAvatarPropertiesProcessor* processor =
+            LLAvatarPropertiesProcessor::getInstance();
+
+        switch (type)
+        {
+            case APT_PROPERTIES:
+            {
+                LLAvatarData* avatar_data =
+                    static_cast<LLAvatarData*>(data);
+
+                if (avatar_data->avatar_id != mCreatorID)
+                {
+                    return;
+                }
+
+                considerStoreText(avatar_data->about_text);
+
+                for (const LLAvatarData::pick_data_t& pick :
+                     avatar_data->picks_list)
+                {
+                    considerStoreText(pick.second);
+
+                    if (mAutoStoreScore < 115
+                        && mRequestedPickIDs.size() < 6
+                        && mRequestedPickIDs.insert(pick.first).second)
+                    {
+                        processor->sendPickInfoRequest(
+                            mCreatorID,
+                            pick.first);
+                    }
+                }
+
+                break;
+            }
+
+            case APT_CLASSIFIEDS:
+            {
+                LLAvatarClassifieds* classifieds =
+                    static_cast<LLAvatarClassifieds*>(data);
+
+                if (classifieds->target_id != mCreatorID)
+                {
+                    return;
+                }
+
+                for (const LLAvatarClassifieds::classified_data& classified :
+                     classifieds->classifieds_list)
+                {
+                    considerStoreText(classified.name);
+
+                    if (mAutoStoreScore < 115
+                        && mRequestedClassifiedIDs.size() < 6
+                        && mRequestedClassifiedIDs.insert(
+                            classified.classified_id).second)
+                    {
+                        processor->sendClassifiedInfoRequest(
+                            classified.classified_id);
+                    }
+                }
+
+                break;
+            }
+
+            case APT_PICK_INFO:
+            {
+                LLPickData* pick =
+                    static_cast<LLPickData*>(data);
+
+                if (pick->creator_id != mCreatorID)
+                {
+                    return;
+                }
+
+                considerStoreText(pick->name);
+                considerStoreText(pick->desc);
+
+                if (hasStoreSignal(pick->desc))
+                {
+                    considerStoreCandidate(pick->name, 90);
+                }
+
+                break;
+            }
+
+            case APT_CLASSIFIED_INFO:
+            {
+                LLAvatarClassifiedInfo* classified =
+                    static_cast<LLAvatarClassifiedInfo*>(data);
+
+                if (classified->creator_id != mCreatorID)
+                {
+                    return;
+                }
+
+                considerStoreText(classified->name);
+                considerStoreText(classified->description);
+
+                if (hasStoreSignal(classified->description))
+                {
+                    considerStoreCandidate(classified->name, 95);
+                }
+
+                break;
+            }
+
+            default:
+                break;
+        }
     }
 
     const std::string& getName() const override
@@ -2358,11 +2517,25 @@ public:
         refreshCreatorName();
 
         std::string searchable = mStoreAlias;
-        if (!searchable.empty() && !mCreatorName.empty())
+
+        if (!mAutoStoreName.empty())
         {
-            searchable += " ";
+            if (!searchable.empty())
+            {
+                searchable += " ";
+            }
+            searchable += mAutoStoreName;
         }
-        searchable += mCreatorName;
+
+        if (!mCreatorName.empty())
+        {
+            if (!searchable.empty())
+            {
+                searchable += " ";
+            }
+            searchable += mCreatorName;
+        }
+
         return searchable;
     }
 
@@ -2480,8 +2653,13 @@ public:
         menu.arrangeAndClear();
     }
 
-    bool refreshCreatorName() const
+    bool refreshCreatorName(bool request_store = true) const
     {
+        if (request_store)
+        {
+            maybeRequestStoreLookup();
+        }
+
         std::string next_name;
 
         if (mCreatorID.isNull())
@@ -2531,10 +2709,316 @@ public:
     }
 
 private:
+    static std::string normalizedStoreText(const std::string& value)
+    {
+        std::string normalized = value;
+        LLStringUtil::toLower(normalized);
+        return normalized;
+    }
+
+    static bool hasStoreSignal(const std::string& value)
+    {
+        const std::string lower = normalizedStoreText(value);
+
+        return lower.find("mainstore") != std::string::npos
+            || lower.find("main store") != std::string::npos
+            || lower.find(" store") != std::string::npos
+            || lower.find("store ") != std::string::npos
+            || lower.find(" shop") != std::string::npos
+            || lower.find("shop ") != std::string::npos
+            || lower.find(" brand") != std::string::npos
+            || lower.find("brand ") != std::string::npos
+            || lower.find("marketplace") != std::string::npos;
+    }
+
+    static std::string cleanStoreCandidate(const std::string& raw)
+    {
+        std::string candidate = raw;
+        LLStringUtil::trim(candidate);
+
+        const std::string delimiters = "\r\n|;\t";
+        const std::string::size_type cut =
+            candidate.find_first_of(delimiters);
+
+        if (cut != std::string::npos)
+        {
+            candidate = candidate.substr(0, cut);
+            LLStringUtil::trim(candidate);
+        }
+
+        while (!candidate.empty())
+        {
+            const char c = candidate.front();
+            if (c == '"' || c == '\'' || c == '[' || c == '('
+                || c == '{' || c == ':' || c == '-' || c == '|')
+            {
+                candidate.erase(candidate.begin());
+                LLStringUtil::trim(candidate);
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        while (!candidate.empty())
+        {
+            const char c = candidate.back();
+            if (c == '"' || c == '\'' || c == ']' || c == ')'
+                || c == '}' || c == ':' || c == '-' || c == '|'
+                || c == ',' || c == ';' || c == '.' || c == '!')
+            {
+                candidate.pop_back();
+                LLStringUtil::trim(candidate);
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        if (candidate.size() < 2 || candidate.size() > 64)
+        {
+            return std::string();
+        }
+
+        const std::string lower = normalizedStoreText(candidate);
+
+        if (lower.find("http://") != std::string::npos
+            || lower.find("https://") != std::string::npos
+            || lower.find("www.") != std::string::npos
+            || lower.find("secondlife://") != std::string::npos
+            || lower.find("maps.secondlife.com") != std::string::npos
+            || lower.find("marketplace.secondlife.com") != std::string::npos)
+        {
+            return std::string();
+        }
+
+        if (lower == "store"
+            || lower == "mainstore"
+            || lower == "main store"
+            || lower == "shop"
+            || lower == "brand"
+            || lower == "marketplace"
+            || lower == "second life"
+            || lower == "secondlife"
+            || lower == "here"
+            || lower == "click here"
+            || lower == "none"
+            || lower == "n/a")
+        {
+            return std::string();
+        }
+
+        return candidate;
+    }
+
+    void refreshStoreDisplay()
+    {
+        mSearchableName.clear();
+        updateDisplayName();
+
+        LLInventoryPanel* panel = mInventoryPanel.get();
+        if (!panel)
+        {
+            return;
+        }
+
+        LLFolderViewItem* view_item =
+            panel->getItemByID(mUUID);
+
+        if (view_item)
+        {
+            view_item->refresh();
+
+            LLFolderViewFolder* parent_folder =
+                view_item->getParentFolder();
+
+            if (parent_folder)
+            {
+                if (parent_folder->getViewModelItem())
+                {
+                    parent_folder->getViewModelItem()->requestSort();
+                }
+
+                parent_folder->requestArrange();
+            }
+        }
+
+        LLFolderView* root = panel->getRootFolder();
+        if (root)
+        {
+            root->requestArrange();
+        }
+
+        requestSort();
+    }
+
+    void considerStoreCandidate(
+        const std::string& raw_candidate,
+        S32 score)
+    {
+        const std::string candidate =
+            cleanStoreCandidate(raw_candidate);
+
+        if (candidate.empty() || score <= mAutoStoreScore)
+        {
+            return;
+        }
+
+        mAutoStoreName = candidate;
+        mAutoStoreScore = score;
+
+        LLCreatorStoreNameCacheEntry& cached =
+            sCreatorStoreNameCache[mCreatorID];
+
+        cached.name = mAutoStoreName;
+        cached.score = mAutoStoreScore;
+
+        refreshStoreDisplay();
+    }
+
+    void considerStoreText(const std::string& text)
+    {
+        if (text.empty())
+        {
+            return;
+        }
+
+        std::string normalized = text;
+        std::replace(
+            normalized.begin(),
+            normalized.end(),
+            '\r',
+            '\n');
+
+        std::string::size_type start = 0;
+
+        while (start <= normalized.size())
+        {
+            const std::string::size_type end =
+                normalized.find('\n', start);
+
+            std::string line =
+                normalized.substr(
+                    start,
+                    (end == std::string::npos)
+                        ? std::string::npos
+                        : end - start);
+
+            LLStringUtil::trim(line);
+
+            if (!line.empty())
+            {
+                const std::string lower =
+                    normalizedStoreText(line);
+
+                auto consider_after =
+                    [&](const std::string& marker, S32 score) -> bool
+                    {
+                        const std::string::size_type pos =
+                            lower.find(marker);
+
+                        if (pos == std::string::npos)
+                        {
+                            return false;
+                        }
+
+                        considerStoreCandidate(
+                            line.substr(pos + marker.size()),
+                            score);
+                        return true;
+                    };
+
+                if (consider_after("main store:", 120)
+                    || consider_after("mainstore:", 120)
+                    || consider_after("store name:", 118)
+                    || consider_after("brand name:", 118)
+                    || consider_after("store:", 115)
+                    || consider_after("brand:", 115)
+                    || consider_after("shop:", 112)
+                    || consider_after("owner of ", 108)
+                    || consider_after("creator of ", 108)
+                    || consider_after("designer for ", 104))
+                {
+                    // Explicit store or brand label found on this line.
+                }
+                else
+                {
+                    const std::string suffixes[] =
+                    {
+                        " mainstore",
+                        " main store"
+                    };
+
+                    for (const std::string& suffix : suffixes)
+                    {
+                        const std::string::size_type pos =
+                            lower.find(suffix);
+
+                        if (pos != std::string::npos && pos > 0)
+                        {
+                            considerStoreCandidate(
+                                line.substr(0, pos),
+                                100);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (end == std::string::npos)
+            {
+                break;
+            }
+
+            start = end + 1;
+        }
+    }
+
+    void maybeRequestStoreLookup() const
+    {
+        if (mCreatorID.isNull()
+            || !mStoreAlias.empty()
+            || mStoreLookupRequested
+            || mAutoStoreScore >= 115
+            || LLStartUp::getStartupState() <= STATE_AGENT_SEND)
+        {
+            return;
+        }
+
+        static F64 next_request_time = 0.0;
+        const F64 now = LLTimer::getTotalSeconds();
+
+        if (now < next_request_time)
+        {
+            return;
+        }
+
+        next_request_time = now + 0.50;
+        mStoreLookupRequested = true;
+
+        LLAvatarPropertiesProcessor* processor =
+            LLAvatarPropertiesProcessor::getInstance();
+
+        processor->sendAvatarPropertiesRequest(mCreatorID);
+        processor->sendAvatarClassifiedsRequest(mCreatorID);
+    }
+
     void updateDisplayName() const
     {
-        mBaseName =
-            mStoreAlias.empty() ? mCreatorName : mStoreAlias;
+        if (!mStoreAlias.empty())
+        {
+            mBaseName = mStoreAlias;
+        }
+        else if (!mAutoStoreName.empty() && mAutoStoreScore >= 100)
+        {
+            mBaseName = mAutoStoreName;
+        }
+        else
+        {
+            mBaseName = mCreatorName;
+        }
 
         mDisplayName = mBaseName;
         mDisplayName += " (";
@@ -2637,6 +3121,11 @@ private:
     LLUUID mCreatorID;
     mutable std::string mCreatorName;
     mutable std::string mStoreAlias;
+    std::string mAutoStoreName;
+    S32 mAutoStoreScore;
+    mutable bool mStoreLookupRequested;
+    std::set<LLUUID> mRequestedPickIDs;
+    std::set<LLUUID> mRequestedClassifiedIDs;
     mutable std::string mBaseName;
     mutable std::string mDisplayName;
     mutable S32 mItemCount;
@@ -2786,8 +3275,175 @@ public:
                         continue;
                     }
 
-                    const S32 type_count =
-                        static_cast<S32>(type_folder->getItemsCount());
+                    S32 type_count = 0;
+
+                    auto creator_subtypes =
+                        mSubtypeFolders.find(creator_id);
+
+                    if (creator_subtypes != mSubtypeFolders.end())
+                    {
+                        auto group_subtypes =
+                            creator_subtypes->second.find(type_entry.first);
+
+                        if (group_subtypes != creator_subtypes->second.end())
+                        {
+                            for (auto& subtype_entry : group_subtypes->second)
+                            {
+                                LLFolderViewFolder* subtype_folder =
+                                    subtype_entry.second;
+
+                                if (!subtype_folder)
+                                {
+                                    continue;
+                                }
+
+                                S32 subtype_count =
+                                    static_cast<S32>(
+                                        subtype_folder->getItemsCount());
+
+                                auto creator_products =
+                                    mProductFamilyFolders.find(creator_id);
+
+                                if (creator_products
+                                    != mProductFamilyFolders.end())
+                                {
+                                    auto group_products =
+                                        creator_products->second.find(
+                                            type_entry.first);
+
+                                    if (group_products
+                                        != creator_products->second.end())
+                                    {
+                                        auto subtype_products =
+                                            group_products->second.find(
+                                                subtype_entry.first);
+
+                                        if (subtype_products
+                                            != group_products->second.end())
+                                        {
+                                            for (auto& product_entry :
+                                                 subtype_products->second)
+                                            {
+                                                LLFolderViewFolder* product_folder =
+                                                    product_entry.second;
+
+                                                if (!product_folder)
+                                                {
+                                                    continue;
+                                                }
+
+                                                const S32 product_count =
+                                                    static_cast<S32>(
+                                                        product_folder->
+                                                            getItemsCount());
+
+                                                subtype_count += product_count;
+
+                                                LLCreatorTypeVirtualFolderBridge*
+                                                    product_bridge =
+                                                        dynamic_cast<
+                                                            LLCreatorTypeVirtualFolderBridge*>(
+                                                                product_folder->
+                                                                    getViewModelItem());
+
+                                                if (product_bridge
+                                                    && product_bridge->
+                                                        setItemCount(
+                                                            product_count))
+                                                {
+                                                    product_folder->refresh();
+                                                    product_folder->
+                                                        getViewModelItem()->
+                                                            dirtyFilter();
+                                                    product_folder->
+                                                        getViewModelItem()->
+                                                            requestSort();
+                                                    creator_view_changed = true;
+                                                }
+
+                                                const std::string
+                                                    product_state_key =
+                                                        productFamilyStateKey(
+                                                            creator_id,
+                                                            type_entry.first,
+                                                            subtype_entry.first,
+                                                            product_entry.first);
+
+                                                const bool product_is_open =
+                                                    product_folder->isOpen();
+
+                                                const bool product_was_open =
+                                                    (mOpenTypeFolderKeys.find(
+                                                        product_state_key)
+                                                        != mOpenTypeFolderKeys.end());
+
+                                                if (product_is_open
+                                                    != product_was_open)
+                                                {
+                                                    if (product_is_open)
+                                                    {
+                                                        mOpenTypeFolderKeys.insert(
+                                                            product_state_key);
+                                                    }
+                                                    else
+                                                    {
+                                                        mOpenTypeFolderKeys.erase(
+                                                            product_state_key);
+                                                    }
+
+                                                    type_open_state_changed = true;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                type_count += subtype_count;
+
+                                LLCreatorTypeVirtualFolderBridge* subtype_bridge =
+                                    dynamic_cast<LLCreatorTypeVirtualFolderBridge*>(
+                                        subtype_folder->getViewModelItem());
+
+                                if (subtype_bridge
+                                    && subtype_bridge->setItemCount(subtype_count))
+                                {
+                                    subtype_folder->refresh();
+                                    subtype_folder->getViewModelItem()->dirtyFilter();
+                                    subtype_folder->getViewModelItem()->requestSort();
+                                    creator_view_changed = true;
+                                }
+
+                                const std::string subtype_state_key =
+                                    subtypeStateKey(
+                                        creator_id,
+                                        type_entry.first,
+                                        subtype_entry.first);
+
+                                const bool subtype_is_open =
+                                    subtype_folder->isOpen();
+
+                                const bool subtype_was_open =
+                                    (mOpenTypeFolderKeys.find(subtype_state_key)
+                                        != mOpenTypeFolderKeys.end());
+
+                                if (subtype_is_open != subtype_was_open)
+                                {
+                                    if (subtype_is_open)
+                                    {
+                                        mOpenTypeFolderKeys.insert(
+                                            subtype_state_key);
+                                    }
+                                    else
+                                    {
+                                        mOpenTypeFolderKeys.erase(
+                                            subtype_state_key);
+                                    }
+
+                                    type_open_state_changed = true;
+                                }
+                            }
+                        }
+                    }
 
                     total_items += type_count;
 
@@ -2802,6 +3458,7 @@ public:
                         type_folder->getViewModelItem()->requestSort();
                         creator_view_changed = true;
                     }
+
                     const std::string type_state_key =
                         typeStateKey(creator_id, type_entry.first);
 
@@ -3145,6 +3802,428 @@ protected:
             return CREATOR_GROUP_ACCESSORIES;
 
         return -1;
+    }
+
+    static bool creatorProductBoundary(char c)
+    {
+        const unsigned char uc =
+            static_cast<unsigned char>(c);
+
+        return !std::isalnum(uc);
+    }
+
+    static bool stripCreatorProductVariantPhrase(
+        std::string& value,
+        const std::string& phrase)
+    {
+        if (value.empty() || phrase.empty())
+        {
+            return false;
+        }
+
+        bool removed = false;
+        std::string lower = value;
+        LLStringUtil::toLower(lower);
+
+        std::string wanted = phrase;
+        LLStringUtil::toLower(wanted);
+
+        std::string::size_type search_from = 0;
+
+        while (search_from < lower.size())
+        {
+            const std::string::size_type pos =
+                lower.find(wanted, search_from);
+
+            if (pos == std::string::npos)
+            {
+                break;
+            }
+
+            const std::string::size_type after =
+                pos + wanted.size();
+
+            const bool left_ok =
+                (pos == 0)
+                || creatorProductBoundary(lower[pos - 1]);
+
+            const bool right_ok =
+                (after >= lower.size())
+                || creatorProductBoundary(lower[after]);
+
+            if (left_ok && right_ok)
+            {
+                value.erase(pos, wanted.size());
+                lower.erase(pos, wanted.size());
+                removed = true;
+                search_from = pos;
+            }
+            else
+            {
+                search_from = pos + wanted.size();
+            }
+        }
+
+        return removed;
+    }
+
+    static std::string cleanCreatorProductFamilyLabel(
+        const std::string& raw)
+    {
+        std::string label = raw;
+
+        for (char& c : label)
+        {
+            if (c == '\t'
+                || c == '[' || c == ']'
+                || c == '(' || c == ')'
+                || c == '{' || c == '}'
+                || c == '|' || c == '/' || c == '\\'
+                || c == '_' || c == '+')
+            {
+                c = ' ';
+            }
+        }
+
+        std::string collapsed;
+        bool previous_space = false;
+
+        for (char c : label)
+        {
+            const bool is_space =
+                std::isspace(static_cast<unsigned char>(c)) != 0;
+
+            if (is_space)
+            {
+                if (!previous_space && !collapsed.empty())
+                {
+                    collapsed += ' ';
+                }
+
+                previous_space = true;
+            }
+            else
+            {
+                collapsed += c;
+                previous_space = false;
+            }
+        }
+
+        LLStringUtil::trim(collapsed);
+
+        auto removable_edge =
+            [](char c) -> bool
+            {
+                return c == '-'
+                    || c == ':'
+                    || c == '.'
+                    || c == ','
+                    || c == ';';
+            };
+
+        while (!collapsed.empty()
+               && removable_edge(collapsed.front()))
+        {
+            collapsed.erase(collapsed.begin());
+            LLStringUtil::trim(collapsed);
+        }
+
+        while (!collapsed.empty()
+               && removable_edge(collapsed.back()))
+        {
+            collapsed.pop_back();
+            LLStringUtil::trim(collapsed);
+        }
+
+        return collapsed;
+    }
+
+    static std::string creatorProductFamilyKey(
+        const std::string& family_label)
+    {
+        std::string key = family_label;
+        LLStringUtil::trim(key);
+        LLStringUtil::toLower(key);
+        return key;
+    }
+
+    std::string creatorProductFamilyLabelForItem(
+        const LLViewerInventoryItem* item) const
+    {
+        if (!item)
+        {
+            return std::string();
+        }
+
+        std::string family = item->getName();
+        LLStringUtil::trim(family);
+
+        if (family.empty())
+        {
+            return std::string();
+        }
+
+        const std::string original = family;
+        bool removed_variant = false;
+
+        // Longest and most-specific phrases first.
+        const std::string variant_phrases[] =
+        {
+            "maitreya petite x",
+            "maitreya petitex",
+            "maitreya lara x",
+            "maitreya larax",
+            "legacy athletic",
+            "legacy perky",
+            "legacy female",
+            "legacy male",
+            "belleza freya",
+            "belleza isis",
+            "belleza venus",
+            "belleza jake",
+            "signature gianni",
+            "signature geralt",
+            "signature davis",
+            "inithium kupra",
+            "kupra kups",
+            "ebody reborn",
+            "e-body reborn",
+            "maitreya",
+            "larax",
+            "petitex",
+            "legacy",
+            "perky",
+            "reborn",
+            "waifu",
+            "kupra",
+            "kups",
+            "belleza",
+            "gianni",
+            "geralt",
+            "davis",
+            "erika",
+            "prima",
+            "peach",
+            "demo",
+            "fatpack"
+        };
+
+        for (const std::string& phrase : variant_phrases)
+        {
+            if (stripCreatorProductVariantPhrase(family, phrase))
+            {
+                removed_variant = true;
+            }
+        }
+
+        if (!removed_variant)
+        {
+            return std::string();
+        }
+
+        family = cleanCreatorProductFamilyLabel(family);
+
+        if (family.size() < 2)
+        {
+            return std::string();
+        }
+
+        std::string original_key =
+            cleanCreatorProductFamilyLabel(original);
+
+        LLStringUtil::toLower(original_key);
+
+        std::string family_key = family;
+        LLStringUtil::toLower(family_key);
+
+        if (family_key == original_key)
+        {
+            return std::string();
+        }
+
+        return family;
+    }
+
+    std::string creatorSubtypeLabelForItem(
+        const LLViewerInventoryItem* item,
+        S32 group) const
+    {
+        if (!item)
+        {
+            return "Other";
+        }
+
+        const std::string text = normalizedItemName(item);
+
+        switch (group)
+        {
+            case CREATOR_GROUP_SHIRTS_TOPS:
+                if (containsAny(text, {" t-shirt ", " t shirt ", " tshirt ", " tee ", " tees "}))
+                    return "T-Shirts";
+                if (containsAny(text, {" crop top ", " cropped top "}))
+                    return "Crop Tops";
+                if (containsAny(text, {" tank ", " tank top ", " tanktop "}))
+                    return "Tanks";
+                if (containsAny(text, {" sweater ", " sweatshirt "}))
+                    return "Sweaters";
+                if (containsAny(text, {" blouse ", " polo ", " tunic "}))
+                    return "Blouses / Tunics";
+                return "Other Tops";
+
+            case CREATOR_GROUP_PANTS_BOTTOMS:
+                if (containsAny(text, {" jeans ", " jean "}))
+                    return "Jeans";
+                if (containsAny(text, {" shorts ", " short "}))
+                    return "Shorts";
+                if (containsAny(text, {" leggings ", " legging "}))
+                    return "Leggings";
+                if (containsAny(text, {" joggers ", " jogger ", " sweatpants "}))
+                    return "Joggers";
+                if (containsAny(text, {" trousers ", " trouser ", " slacks "}))
+                    return "Trousers";
+                return "Other Bottoms";
+
+            case CREATOR_GROUP_SHOES_FOOTWEAR:
+                if (containsAny(text, {" boots ", " boot ", " booties ", " bootie "}))
+                    return "Boots";
+                if (containsAny(text, {" heels ", " heel ", " pumps ", " pump ", " stilettos ", " stiletto "}))
+                    return "Heels / Pumps";
+                if (containsAny(text, {" sneakers ", " sneaker ", " trainers ", " trainer "}))
+                    return "Sneakers";
+                if (containsAny(text, {" sandals ", " sandal ", " flip flops ", " flip-flops "}))
+                    return "Sandals";
+                if (containsAny(text, {" loafers ", " loafer ", " flats ", " flat "}))
+                    return "Flats / Loafers";
+                if (containsAny(text, {" slippers ", " slipper "}))
+                    return "Slippers";
+                return "Other Footwear";
+
+            case CREATOR_GROUP_JACKETS_OUTERWEAR:
+                if (containsAny(text, {" hoodie ", " hoodies "}))
+                    return "Hoodies";
+                if (containsAny(text, {" coat ", " coats ", " overcoat ", " trench ", " parka ", " parkas "}))
+                    return "Coats";
+                if (containsAny(text, {" blazer ", " blazers "}))
+                    return "Blazers";
+                if (containsAny(text, {" cardigan ", " cardigans "}))
+                    return "Cardigans";
+                if (containsAny(text, {" jacket ", " jackets ", " bolero "}))
+                    return "Jackets";
+                return "Other Outerwear";
+
+            case CREATOR_GROUP_SOCKS_HOSIERY:
+                if (containsAny(text, {" stockings ", " stocking ", " thigh highs ", " thigh-highs "}))
+                    return "Stockings";
+                if (containsAny(text, {" tights ", " hosiery "}))
+                    return "Tights / Hosiery";
+                if (containsAny(text, {" socks ", " sock "}))
+                    return "Socks";
+                return "Other Hosiery";
+
+            case CREATOR_GROUP_GLOVES:
+                if (containsAny(text, {" gauntlets ", " gauntlet "}))
+                    return "Gauntlets";
+                if (containsAny(text, {" mittens ", " mitten "}))
+                    return "Mittens";
+                if (containsAny(text, {" gloves ", " glove "}))
+                    return "Gloves";
+                return "Other Gloves";
+
+            case CREATOR_GROUP_SKIRTS:
+                if (containsAny(text, {" miniskirt ", " mini skirt "}))
+                    return "Mini Skirts";
+                return "Skirts";
+
+            case CREATOR_GROUP_DRESSES_OUTFITS:
+                if (containsAny(text, {" gown ", " gowns "}))
+                    return "Gowns";
+                if (containsAny(text, {" bodysuit ", " bodysuits ", " catsuit ", " catsuits "}))
+                    return "Bodysuits";
+                if (containsAny(text, {" jumpsuit ", " jumpsuits ", " romper ", " rompers "}))
+                    return "Jumpsuits / Rompers";
+                if (containsAny(text, {" dress ", " dresses "}))
+                    return "Dresses";
+                return "Other Outfits";
+
+            case CREATOR_GROUP_UNDERWEAR:
+                if (containsAny(text, {" bra ", " bras "}))
+                    return "Bras";
+                if (containsAny(text, {" panties ", " panty ", " thong ", " thongs "}))
+                    return "Panties / Thongs";
+                if (containsAny(text, {" boxers ", " boxer ", " briefs ", " brief "}))
+                    return "Boxers / Briefs";
+                if (containsAny(text, {" lingerie ", " lingerie set "}))
+                    return "Lingerie";
+                return "Other Underwear";
+
+            case CREATOR_GROUP_HAIR:
+                if (containsAny(text, {" ponytail ", " ponytails "}))
+                    return "Ponytails";
+                if (containsAny(text, {" braid ", " braids ", " braided "}))
+                    return "Braids";
+                if (containsAny(text, {" bun ", " buns "}))
+                    return "Buns";
+                if (containsAny(text, {" bangs ", " bang "}))
+                    return "Bangs";
+                if (containsAny(text, {" wig ", " wigs "}))
+                    return "Wigs";
+                return "Other Hair";
+
+            case CREATOR_GROUP_BODY_PARTS:
+                if (containsAny(text, {" head ", " heads ", " mesh head "}))
+                    return "Heads";
+                if (containsAny(text, {" body ", " bodies ", " mesh body "}))
+                    return "Bodies";
+                if (containsAny(text, {" eyes ", " eye "}))
+                    return "Eyes";
+                if (containsAny(text, {" hands ", " hand "}))
+                    return "Hands";
+                if (containsAny(text, {" feet ", " foot "}))
+                    return "Feet";
+                if (containsAny(text, {" shape ", " shapes "}))
+                    return "Shapes";
+                if (containsAny(text, {" skin ", " skins "}))
+                    return "Skins";
+                return "Other Body Parts";
+
+            case CREATOR_GROUP_BODY_LAYERS:
+                if (containsAny(text, {" tattoo ", " tattoos "}))
+                    return "Tattoos";
+                if (containsAny(text, {" alpha ", " alpha layer "}))
+                    return "Alpha Layers";
+                if (containsAny(text, {" bom ", " bom layer ", " bake on mesh ", " bakes on mesh "}))
+                    return "BOM Layers";
+                if (containsAny(text, {" universal ", " universal layer "}))
+                    return "Universal Layers";
+                if (containsAny(text, {" physics ", " physics layer "}))
+                    return "Physics";
+                return "Other Body Layers";
+
+            case CREATOR_GROUP_ACCESSORIES:
+                if (containsAny(text, {" hud ", " controller ", " applier "}))
+                    return "HUDs / Controllers";
+                if (containsAny(text, {" necklace ", " necklaces ", " earring ", " earrings ", " bracelet ", " bracelets ", " ring ", " rings ", " choker ", " chokers ", " watch ", " watches ", " piercing ", " piercings "}))
+                    return "Jewelry";
+                if (containsAny(text, {" glasses ", " sunglasses ", " eyewear "}))
+                    return "Eyewear";
+                if (containsAny(text, {" bag ", " bags ", " purse ", " purses ", " backpack ", " backpacks "}))
+                    return "Bags";
+                if (containsAny(text, {" hat ", " hats ", " cap ", " caps ", " beanie ", " crown ", " crowns "}))
+                    return "Headwear";
+                if (containsAny(text, {" mask ", " masks "}))
+                    return "Masks";
+                if (containsAny(text, {" belt ", " belts ", " harness ", " harnesses "}))
+                    return "Belts / Harnesses";
+                if (containsAny(text, {" nails ", " nail "}))
+                    return "Nails";
+                if (containsAny(text, {" horns ", " horn ", " wings ", " wing ", " tail ", " tails "}))
+                    return "Fantasy Parts";
+                return "Other Accessories";
+
+            case CREATOR_GROUP_OTHER_WEARABLES:
+            default:
+                return "Miscellaneous";
+        }
     }
 
     S32 automaticGroupForItem(
@@ -3494,6 +4573,34 @@ protected:
                 continue;
             }
 
+            const std::string subtype_label =
+                creatorSubtypeLabelForItem(item, resolved_group);
+
+            LLFolderViewFolder* subtype_folder =
+                ensureSubtypeFolder(
+                    creator_id,
+                    resolved_group,
+                    subtype_label,
+                    type_folder);
+
+            if (!subtype_folder)
+            {
+                continue;
+            }
+
+            LLFolderViewFolder* item_parent =
+                productFamilyParentForItem(
+                    creator_id,
+                    resolved_group,
+                    subtype_label,
+                    item,
+                    subtype_folder);
+
+            if (!item_parent)
+            {
+                continue;
+            }
+
             if (!view_item)
             {
                 buildViewsTree(
@@ -3501,7 +4608,7 @@ protected:
                     item->getParentUUID(),
                     item,
                     nullptr,
-                    type_folder,
+                    item_parent,
                     BUILD_ONE_FOLDER);
 
                 view_item = getItemByID(item_id);
@@ -3509,9 +4616,9 @@ protected:
 
             if (view_item)
             {
-                if (view_item->getParentFolder() != type_folder)
+                if (view_item->getParentFolder() != item_parent)
                 {
-                    view_item->addToFolder(type_folder);
+                    view_item->addToFolder(item_parent);
                 }
 
                 view_item->refresh();
@@ -3522,6 +4629,8 @@ protected:
                     view_item->getViewModelItem()->requestSort();
                 }
 
+                item_parent->requestArrange();
+                subtype_folder->requestArrange();
                 type_folder->requestArrange();
 
                 if (creator_folder)
@@ -3559,6 +4668,30 @@ protected:
         return creator_id.asString()
             + "|"
             + std::to_string(group);
+    }
+
+    std::string subtypeStateKey(
+        const LLUUID& creator_id,
+        S32 group,
+        const std::string& subtype) const
+    {
+        return typeStateKey(creator_id, group)
+            + "|"
+            + subtype;
+    }
+
+    std::string productFamilyStateKey(
+        const LLUUID& creator_id,
+        S32 group,
+        const std::string& subtype,
+        const std::string& family_key) const
+    {
+        return subtypeStateKey(
+            creator_id,
+            group,
+            subtype)
+            + "|product|"
+            + family_key;
     }
 
     void loadTypeOpenState()
@@ -3782,6 +4915,195 @@ protected:
         return folder;
     }
 
+    LLFolderViewFolder* ensureSubtypeFolder(
+        const LLUUID& creator_id,
+        S32 group,
+        const std::string& subtype,
+        LLFolderViewFolder* type_folder)
+    {
+        if (!type_folder || group < 0 || subtype.empty())
+        {
+            return nullptr;
+        }
+
+        auto creator_subtypes = mSubtypeFolders.find(creator_id);
+        if (creator_subtypes != mSubtypeFolders.end())
+        {
+            auto group_subtypes = creator_subtypes->second.find(group);
+            if (group_subtypes != creator_subtypes->second.end())
+            {
+                auto found = group_subtypes->second.find(subtype);
+                if (found != group_subtypes->second.end() && found->second)
+                {
+                    return found->second;
+                }
+            }
+        }
+
+        const LLUUID subtype_group_id = LLUUID::generateNewID();
+
+        LLCreatorTypeVirtualFolderBridge* bridge =
+            new LLCreatorTypeVirtualFolderBridge(
+                this,
+                mFolderRoot.get(),
+                subtype_group_id,
+                subtype);
+
+        LLFolderViewFolder* folder =
+            createFolderViewFolder(bridge, false);
+
+        if (!folder)
+        {
+            delete bridge;
+            return nullptr;
+        }
+
+        folder->addToFolder(type_folder);
+        folder->setChildrenInited(true);
+
+        const std::string subtype_state_key =
+            subtypeStateKey(creator_id, group, subtype);
+
+        const bool saved_open =
+            (mOpenTypeFolderKeys.find(subtype_state_key)
+                != mOpenTypeFolderKeys.end());
+
+        folder->setOpen(saved_open);
+
+        addItemID(subtype_group_id, folder);
+        mSubtypeFolders[creator_id][group][subtype] = folder;
+
+        return folder;
+    }
+
+    LLFolderViewFolder* ensureProductFamilyFolder(
+        const LLUUID& creator_id,
+        S32 group,
+        const std::string& subtype,
+        const std::string& family_label,
+        LLFolderViewFolder* subtype_folder)
+    {
+        if (!subtype_folder
+            || group < 0
+            || subtype.empty()
+            || family_label.empty())
+        {
+            return nullptr;
+        }
+
+        const std::string family_key =
+            creatorProductFamilyKey(family_label);
+
+        if (family_key.empty())
+        {
+            return nullptr;
+        }
+
+        auto creator_products =
+            mProductFamilyFolders.find(creator_id);
+
+        if (creator_products != mProductFamilyFolders.end())
+        {
+            auto group_products =
+                creator_products->second.find(group);
+
+            if (group_products != creator_products->second.end())
+            {
+                auto subtype_products =
+                    group_products->second.find(subtype);
+
+                if (subtype_products != group_products->second.end())
+                {
+                    auto found =
+                        subtype_products->second.find(family_key);
+
+                    if (found != subtype_products->second.end()
+                        && found->second)
+                    {
+                        return found->second;
+                    }
+                }
+            }
+        }
+
+        const LLUUID product_group_id =
+            LLUUID::generateNewID();
+
+        LLCreatorTypeVirtualFolderBridge* bridge =
+            new LLCreatorTypeVirtualFolderBridge(
+                this,
+                mFolderRoot.get(),
+                product_group_id,
+                family_label);
+
+        LLFolderViewFolder* folder =
+            createFolderViewFolder(bridge, false);
+
+        if (!folder)
+        {
+            delete bridge;
+            return nullptr;
+        }
+
+        folder->addToFolder(subtype_folder);
+        folder->setChildrenInited(true);
+
+        const std::string product_state_key =
+            productFamilyStateKey(
+                creator_id,
+                group,
+                subtype,
+                family_key);
+
+        const bool saved_open =
+            (mOpenTypeFolderKeys.find(product_state_key)
+                != mOpenTypeFolderKeys.end());
+
+        folder->setOpen(saved_open);
+
+        addItemID(product_group_id, folder);
+
+        mProductFamilyFolders[creator_id]
+            [group]
+            [subtype]
+            [family_key] = folder;
+
+        return folder;
+    }
+
+    LLFolderViewFolder* productFamilyParentForItem(
+        const LLUUID& creator_id,
+        S32 group,
+        const std::string& subtype,
+        const LLViewerInventoryItem* item,
+        LLFolderViewFolder* subtype_folder)
+    {
+        if (!subtype_folder || !item)
+        {
+            return subtype_folder;
+        }
+
+        const std::string family_label =
+            creatorProductFamilyLabelForItem(item);
+
+        if (family_label.empty())
+        {
+            return subtype_folder;
+        }
+
+        LLFolderViewFolder* product_folder =
+            ensureProductFamilyFolder(
+                creator_id,
+                group,
+                subtype,
+                family_label,
+                subtype_folder);
+
+        return product_folder
+            ? product_folder
+            : subtype_folder;
+    }
+
     void findAndInitRootContent(const LLUUID& id) override
     {
         const F64 current_time = LLTimer::getTotalSeconds();
@@ -3860,12 +5182,40 @@ protected:
                     continue;
                 }
 
+                const std::string subtype_label =
+                    creatorSubtypeLabelForItem(item, item_group);
+
+                LLFolderViewFolder* subtype_folder =
+                    ensureSubtypeFolder(
+                        creator_id,
+                        item_group,
+                        subtype_label,
+                        type_folder);
+
+                if (!subtype_folder)
+                {
+                    continue;
+                }
+
+                LLFolderViewFolder* item_parent =
+                    productFamilyParentForItem(
+                        creator_id,
+                        item_group,
+                        subtype_label,
+                        item,
+                        subtype_folder);
+
+                if (!item_parent)
+                {
+                    continue;
+                }
+
                 buildViewsTree(
                     item_id,
                     item->getParentUUID(),
                     item,
                     nullptr,
-                    type_folder,
+                    item_parent,
                     BUILD_TIMELIMIT);
             }
         }
@@ -3933,6 +5283,34 @@ protected:
             return;
         }
 
+        const std::string subtype_label =
+            creatorSubtypeLabelForItem(item, item_group);
+
+        LLFolderViewFolder* subtype_folder =
+            ensureSubtypeFolder(
+                creator_id,
+                item_group,
+                subtype_label,
+                type_folder);
+
+        if (!subtype_folder)
+        {
+            return;
+        }
+
+        LLFolderViewFolder* item_parent =
+            productFamilyParentForItem(
+                creator_id,
+                item_group,
+                subtype_label,
+                item,
+                subtype_folder);
+
+        if (!item_parent)
+        {
+            return;
+        }
+
         if (!view_item)
         {
             buildViewsTree(
@@ -3940,7 +5318,7 @@ protected:
                 item->getParentUUID(),
                 model_item,
                 nullptr,
-                type_folder,
+                item_parent,
                 BUILD_ONE_FOLDER);
 
             view_item = getItemByID(id);
@@ -3948,9 +5326,9 @@ protected:
 
         if (view_item)
         {
-            if (view_item->getParentFolder() != type_folder)
+            if (view_item->getParentFolder() != item_parent)
             {
-                view_item->addToFolder(type_folder);
+                view_item->addToFolder(item_parent);
             }
 
             view_item->refresh();
@@ -3960,6 +5338,16 @@ protected:
                         view_item->getViewModelItem()))
             {
                 vm_item->requestSort();
+            }
+
+            if (item_parent->getViewModelItem())
+            {
+                item_parent->getViewModelItem()->requestSort();
+            }
+
+            if (subtype_folder->getViewModelItem())
+            {
+                subtype_folder->getViewModelItem()->requestSort();
             }
 
             if (type_folder->getViewModelItem())
@@ -3972,6 +5360,8 @@ protected:
                 creator_folder->getViewModelItem()->requestSort();
             }
 
+            item_parent->requestArrange();
+            subtype_folder->requestArrange();
             type_folder->requestArrange();
             creator_folder->requestArrange();
         }
@@ -3980,6 +5370,18 @@ protected:
 private:
     std::map<LLUUID, LLFolderViewFolder*> mCreatorFolders;
     std::map<LLUUID, std::map<S32, LLFolderViewFolder*> > mTypeFolders;
+    std::map<
+        LLUUID,
+        std::map<S32, std::map<std::string, LLFolderViewFolder*> > >
+        mSubtypeFolders;
+    std::map<
+        LLUUID,
+        std::map<
+            S32,
+            std::map<
+                std::string,
+                std::map<std::string, LLFolderViewFolder*> > > >
+        mProductFamilyFolders;
     std::set<LLUUID> mOpenCreatorIDs;
     std::set<std::string> mOpenTypeFolderKeys;
     std::map<LLUUID, S32> mClassificationOverrides;
