@@ -16693,6 +16693,17 @@
       <key>Value</key>
       <string />
     </map>
+    <key>CreatorViewAutoStoreCache</key>
+    <map>
+      <key>Comment</key>
+      <string>Persistent viewer-only cache of automatically detected Creator View store names, confidence scores, and last-checked timestamps.</string>
+      <key>Persist</key>
+      <integer>1</integer>
+      <key>Type</key>
+      <string>String</string>
+      <key>Value</key>
+      <string />
+    </map>
     <key>CreatorViewItemClassifications</key>
     <map>
       <key>Comment</key>

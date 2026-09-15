@@ -38,6 +38,7 @@
 #include "llavatarnamecache.h"
 #include "llavatarpropertiesprocessor.h"
 #include "llclipboard.h"
+#include "lldate.h"
 #include "llfloaterreg.h"
 #include "llfloatersidepanelcontainer.h"
 #include "llfolderview.h"
@@ -2326,10 +2327,145 @@ struct LLCreatorStoreNameCacheEntry
 {
     std::string name;
     S32 score = 0;
+    F64 last_checked = 0.0;
 };
 
 static std::map<LLUUID, LLCreatorStoreNameCacheEntry>
     sCreatorStoreNameCache;
+
+static bool sCreatorStoreNameCacheLoaded = false;
+
+static void loadCreatorStoreNameCache()
+{
+    if (sCreatorStoreNameCacheLoaded)
+    {
+        return;
+    }
+
+    sCreatorStoreNameCacheLoaded = true;
+    sCreatorStoreNameCache.clear();
+
+    const std::string saved =
+        gSavedSettings.getString("CreatorViewAutoStoreCache");
+
+    std::string::size_type start = 0;
+
+    while (start < saved.size())
+    {
+        const std::string::size_type end =
+            saved.find('\n', start);
+
+        const std::string line =
+            saved.substr(
+                start,
+                (end == std::string::npos)
+                    ? std::string::npos
+                    : end - start);
+
+        if (!line.empty())
+        {
+            const std::string::size_type p1 =
+                line.find('|');
+            const std::string::size_type p2 =
+                (p1 == std::string::npos)
+                    ? std::string::npos
+                    : line.find('|', p1 + 1);
+            const std::string::size_type p3 =
+                (p2 == std::string::npos)
+                    ? std::string::npos
+                    : line.find('|', p2 + 1);
+
+            if (p1 != std::string::npos
+                && p2 != std::string::npos
+                && p3 != std::string::npos)
+            {
+                const LLUUID creator_id(
+                    line.substr(0, p1));
+
+                if (creator_id.notNull())
+                {
+                    LLCreatorStoreNameCacheEntry entry;
+
+                    entry.score =
+                        atoi(
+                            line.substr(
+                                p1 + 1,
+                                p2 - p1 - 1).c_str());
+
+                    entry.last_checked =
+                        atof(
+                            line.substr(
+                                p2 + 1,
+                                p3 - p2 - 1).c_str());
+
+                    entry.name =
+                        line.substr(p3 + 1);
+
+                    sCreatorStoreNameCache[creator_id] =
+                        entry;
+                }
+            }
+        }
+
+        if (end == std::string::npos)
+        {
+            break;
+        }
+
+        start = end + 1;
+    }
+}
+
+static void saveCreatorStoreNameCache()
+{
+    std::string saved;
+    bool first = true;
+
+    for (const auto& cached :
+         sCreatorStoreNameCache)
+    {
+        if (cached.first.isNull())
+        {
+            continue;
+        }
+
+        std::string safe_name =
+            cached.second.name;
+
+        for (char& c : safe_name)
+        {
+            if (c == '\r'
+                || c == '\n'
+                || c == '|')
+            {
+                c = ' ';
+            }
+        }
+
+        if (!first)
+        {
+            saved += "\n";
+        }
+
+        saved += cached.first.asString();
+        saved += "|";
+        saved +=
+            std::to_string(cached.second.score);
+        saved += "|";
+        saved +=
+            std::to_string(
+                cached.second.last_checked);
+        saved += "|";
+        saved += safe_name;
+
+        first = false;
+    }
+
+    gSavedSettings.setString(
+        "CreatorViewAutoStoreCache",
+        saved);
+}
+
 class LLCreatorVirtualFolderBridge final
     : public LLFolderBridge,
       public LLAvatarPropertiesObserver
@@ -2346,20 +2482,30 @@ public:
           mStoreAlias(),
           mAutoStoreName(),
           mAutoStoreScore(0),
+          mAutoStoreLastChecked(0.0),
           mStoreLookupRequested(false),
           mBaseName(),
           mDisplayName(),
           mItemCount(0)
     {
         loadStoreAlias();
+        loadCreatorStoreNameCache();
 
         if (mCreatorID.notNull())
         {
-            auto cached = sCreatorStoreNameCache.find(mCreatorID);
-            if (cached != sCreatorStoreNameCache.end())
+            auto cached =
+                sCreatorStoreNameCache.find(
+                    mCreatorID);
+
+            if (cached
+                != sCreatorStoreNameCache.end())
             {
-                mAutoStoreName = cached->second.name;
-                mAutoStoreScore = cached->second.score;
+                mAutoStoreName =
+                    cached->second.name;
+                mAutoStoreScore =
+                    cached->second.score;
+                mAutoStoreLastChecked =
+                    cached->second.last_checked;
             }
 
             LLAvatarPropertiesProcessor::getInstance()->addObserver(
@@ -2405,6 +2551,7 @@ public:
                     return;
                 }
 
+                markStoreLookupChecked();
                 considerStoreText(avatar_data->about_text);
 
                 for (const LLAvatarData::pick_data_t& pick :
@@ -2434,6 +2581,8 @@ public:
                 {
                     return;
                 }
+
+                markStoreLookupChecked();
 
                 for (const LLAvatarClassifieds::classified_data& classified :
                      classifieds->classifieds_list)
@@ -2875,7 +3024,33 @@ private:
         cached.name = mAutoStoreName;
         cached.score = mAutoStoreScore;
 
+        if (mAutoStoreLastChecked <= 0.0)
+        {
+            mAutoStoreLastChecked =
+                LLDate::now().secondsSinceEpoch();
+        }
+
+        cached.last_checked =
+            mAutoStoreLastChecked;
+
+        saveCreatorStoreNameCache();
         refreshStoreDisplay();
+    }
+
+    void markStoreLookupChecked()
+    {
+        mAutoStoreLastChecked =
+            LLDate::now().secondsSinceEpoch();
+
+        LLCreatorStoreNameCacheEntry& cached =
+            sCreatorStoreNameCache[mCreatorID];
+
+        cached.name = mAutoStoreName;
+        cached.score = mAutoStoreScore;
+        cached.last_checked =
+            mAutoStoreLastChecked;
+
+        saveCreatorStoreNameCache();
     }
 
     void considerStoreText(const std::string& text)
@@ -2981,28 +3156,52 @@ private:
         if (mCreatorID.isNull()
             || !mStoreAlias.empty()
             || mStoreLookupRequested
-            || mAutoStoreScore >= 115
-            || LLStartUp::getStartupState() <= STATE_AGENT_SEND)
+            || LLStartUp::getStartupState()
+                <= STATE_AGENT_SEND)
+        {
+            return;
+        }
+
+        static const F64 CACHE_MAX_AGE_SECONDS =
+            7.0 * 24.0 * 60.0 * 60.0;
+
+        const F64 epoch_now =
+            LLDate::now().secondsSinceEpoch();
+
+        const bool cache_is_fresh =
+            mAutoStoreLastChecked > 0.0
+            && epoch_now >= mAutoStoreLastChecked
+            && (epoch_now - mAutoStoreLastChecked)
+                < CACHE_MAX_AGE_SECONDS;
+
+        if (cache_is_fresh)
         {
             return;
         }
 
         static F64 next_request_time = 0.0;
-        const F64 now = LLTimer::getTotalSeconds();
 
-        if (now < next_request_time)
+        const F64 session_now =
+            LLTimer::getTotalSeconds();
+
+        if (session_now < next_request_time)
         {
             return;
         }
 
-        next_request_time = now + 0.50;
+        next_request_time =
+            session_now + 0.50;
+
         mStoreLookupRequested = true;
 
         LLAvatarPropertiesProcessor* processor =
             LLAvatarPropertiesProcessor::getInstance();
 
-        processor->sendAvatarPropertiesRequest(mCreatorID);
-        processor->sendAvatarClassifiedsRequest(mCreatorID);
+        processor->sendAvatarPropertiesRequest(
+            mCreatorID);
+
+        processor->sendAvatarClassifiedsRequest(
+            mCreatorID);
     }
 
     void updateDisplayName() const
@@ -3123,6 +3322,7 @@ private:
     mutable std::string mStoreAlias;
     std::string mAutoStoreName;
     S32 mAutoStoreScore;
+    F64 mAutoStoreLastChecked;
     mutable bool mStoreLookupRequested;
     std::set<LLUUID> mRequestedPickIDs;
     std::set<LLUUID> mRequestedClassifiedIDs;
